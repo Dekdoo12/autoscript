@@ -38,6 +38,27 @@ confirm_reinstall() {
 
 os_id() { . /etc/os-release; echo "$ID"; }
 
+
+# ---------- profile login: panel (kalau ada) atau installer ----------
+set_profile() {
+  sed -i '/# v5-profile-begin/,/# v5-profile-end/d' /root/.profile 2>/dev/null
+  sed -i '\#^\[ -x /usr/local/sbin/v5-setup \] && v5-setup$#d' /root/.profile 2>/dev/null
+  cat >> /root/.profile <<'EOF'
+# v5-profile-begin
+if [ -x /usr/local/sbin/menu ]; then menu; elif [ -x /usr/local/sbin/v5-setup ]; then v5-setup; fi
+# v5-profile-end
+EOF
+}
+
+# ---------- cek apakah IP VPS ini terdaftar lisensi panel (hanya MEMBACA) ----------
+panel_licensed() {
+  local ip exp today
+  ip=$(curl -sS --max-time 10 ipv4.icanhazip.com)
+  exp=$(curl -sS --max-time 10 https://raw.githubusercontent.com/kizaruvpn/izinsc/main/ip | grep -F "$ip" | awk '{print $3}' | head -1)
+  today=$(date +%Y-%m-%d)
+  [ -n "$exp" ] && [[ "$today" < "$exp" ]]
+}
+
 # =====================================================================
 #  TAHAP 1 : BOOTSTRAP (hanya dasar, TIDAK memasang layanan)
 # =====================================================================
@@ -62,12 +83,21 @@ bootstrap() {
     cp -f "$0" "$SELF_BIN" && chmod +x "$SELF_BIN"
   fi
 
-  # tampilkan menu otomatis saat login root (kalau panel bawaan belum dipasang)
-  if ! grep -q "v5-setup" /root/.profile 2>/dev/null; then
-    cat >> /root/.profile <<'EOF'
-[ -x /usr/local/sbin/v5-setup ] && v5-setup
-EOF
+  # data dasar yang dibaca panel
+  mkdir -p /etc/xray
+  [ -s /etc/xray/city ] || curl -s ipinfo.io/city > /etc/xray/city
+  [ -s /etc/xray/isp ]  || curl -s ipinfo.io/org | cut -d " " -f 2-10 > /etc/xray/isp
+  [ -s /etc/xray/username ] || echo ".::. KIZARUVPN .::." > /etc/xray/username
+
+  # panel menu (menu utama) -> otomatis hanya kalau IP terdaftar lisensi
+  if panel_licensed; then
+    print_ok "IP terdaftar lisensi -> memasang panel menu utama"
+    install_panel auto
+  else
+    echo -e "${Y}IP VPS ini tidak terdaftar lisensi panel -> panel TIDAK dipasang otomatis.${N}"
+    echo -e "${Y}Kamu tetap bisa pakai menu installer ini (v5-setup).${N}"
   fi
+  set_profile
   print_ok "Dasar siap. Tidak ada layanan yang dipasang."
   sleep 1
 }
@@ -425,14 +455,17 @@ install_firewall() {
 
 # ---------- 16. Panel / menu akun (bawaan author) ----------
 install_panel() {
-  confirm_reinstall panel || return
+  local mode="$1"
+  if [ "$mode" != "auto" ]; then
+    confirm_reinstall panel || return
+    if ! panel_licensed; then
+      echo -e "${R}PERINGATAN:${N} IP VPS ini tidak terdaftar lisensi panel (kizaruvpn/izinsc)."
+      echo -e "Panel akan menampilkan 'PERMISSION DENIED' lalu ${R}me-REBOOT VPS${N} tiap dipakai."
+      read -rp "Ketik YA untuk tetap lanjut : " a; [ "$a" = "YA" ] || return
+    fi
+  fi
   need_base
   print_install "Memasang Panel Menu (add/del/renew akun)"
-  echo -e "${R}PERINGATAN:${N} skrip panel ini milik author asli dan mengecek lisensi IP ke"
-  echo -e "repo ${W}kizaruvpn/izinsc${N}. Jika IP VPS ini TIDAK terdaftar di sana, setiap"
-  echo -e "perintah panel akan menampilkan 'PERMISSION DENIED' lalu ${R}me-REBOOT VPS${N}."
-  echo -e "Pasang hanya jika kamu punya izin/lisensi dari author."
-  read -rp "Ketik YA untuk lanjut : " a; [ "$a" = "YA" ] || return
   cd /root || return
   wget -q -O menu.zip "${REPO}Cdy/menu.zip"
   7z x -y -pHeyHeyMauDecryptYaAwokawok menu.zip >/dev/null
@@ -442,7 +475,7 @@ install_panel() {
   mv -f menu/* /usr/local/sbin/
   rm -rf menu menu.zip /usr/local/sbin/*~ /usr/local/sbin/gz* /usr/local/sbin/*.bak
   wget -q -O /usr/local/sbin/m-noobz "${REPO}Cfg/m-noobz"; chmod +x /usr/local/sbin/m-noobz
-  mark_done panel; print_ok "Panel terpasang. Ketik: menu"
+  mark_done panel; set_profile; print_ok "Panel terpasang. Ketik: menu  (menu 13 = installer layanan)"
 }
 
 # ---------- 17. Cron otomatis (opsional) ----------
