@@ -361,7 +361,23 @@ print_install "Core Xray 1.8.24 Latest Version"
 domainSock_dir="/run/xray";! [ -d $domainSock_dir ] && mkdir  $domainSock_dir
 chown www-data.www-data $domainSock_dir
 latest_version="$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases | grep tag_name | sed -E 's/.*"v(.*)".*/\1/' | head -n 1)"
-bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install -u www-data --version 1.8.24
+# Pasang Xray langsung dari rilis resmi (installer XTLS menolak argumen yang dipakai sebelumnya)
+XVER="1.8.24"
+case "$(uname -m)" in
+  x86_64|amd64)  XRAY_ZIP="Xray-linux-64.zip" ;;
+  aarch64|arm64) XRAY_ZIP="Xray-linux-arm64-v8a.zip" ;;
+  armv7l|armv7)  XRAY_ZIP="Xray-linux-arm32-v7a.zip" ;;
+  *) echo "Arsitektur tidak didukung"; exit 1 ;;
+esac
+apt-get install -y unzip curl >/dev/null 2>&1
+mkdir -p /usr/local/share/xray /usr/local/etc/xray
+tmpx=$(mktemp -d)
+curl -fL --retry 3 --connect-timeout 20 -o "$tmpx/xray.zip" "https://github.com/XTLS/Xray-core/releases/download/v${XVER}/${XRAY_ZIP}" && unzip -q -o "$tmpx/xray.zip" -d "$tmpx"
+if [ ! -f "$tmpx/xray" ]; then echo "GAGAL memasang Xray: cek koneksi ke github.com lalu jalankan ulang"; exit 1; fi
+install -m 755 "$tmpx/xray" /usr/local/bin/xray
+cp -f "$tmpx/geoip.dat" "$tmpx/geosite.dat" /usr/local/share/xray/ 2>/dev/null
+rm -rf "$tmpx"
+/usr/local/bin/xray version | head -1
 wget -O /etc/xray/config.json "${REPO}Cfg/config.json" >/dev/null 2>&1
 wget -O /etc/systemd/system/runn.service "${REPO}Fls/runn.service" >/dev/null 2>&1
 domain=$(cat /etc/xray/domain)
