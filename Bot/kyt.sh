@@ -6,8 +6,6 @@ domain=$(cat /etc/xray/domain)
 # Deteksi Sistem Operasi
 OS=$(grep -E '^ID=' /etc/os-release | cut -d '=' -f 2 | tr -d '"')
 VERSION=$(grep -E '^VERSION_ID=' /etc/os-release | cut -d '=' -f 2 | tr -d '"')
-rm -rf /var/lib/dpkg/stato* >/dev/null
-rm -rf /var/lib/dpkg/lock* >/dev/null
 # Fungsi untuk instalasi tanpa virtual environment
 install_without_env() {
     echo "Sistem tidak mendukung virtual environment. Melanjutkan instalasi tanpa venv."
@@ -27,7 +25,7 @@ cd /usr/bin
 wget https://raw.githubusercontent.com/Dekdoo12/autoscript/main/Bot/bot.zip
 unzip bot.zip
 mv bot/* /usr/bin
-chmod +x /usr/bin/*
+chmod +x /usr/bin/bot-* /usr/bin/xp 2>/dev/null
 rm -rf bot.zip
 clear
 wget https://raw.githubusercontent.com/Dekdoo12/autoscript/main/Bot/kyt.zip
@@ -55,7 +53,7 @@ rm *.session >/dev/null
     wget https://raw.githubusercontent.com/Dekdoo12/autoscript/main/Bot/bot.zip
     unzip bot.zip
     mv bot/* /usr/bin
-    chmod +x /usr/bin/*
+    chmod +x /usr/bin/bot-* /usr/bin/xp 2>/dev/null
     rm -rf bot.zip
     wget https://raw.githubusercontent.com/Dekdoo12/autoscript/main/Bot/kyt.zip
     unzip kyt.zip
@@ -95,6 +93,7 @@ echo -e ADMIN='"'$admin'"' >> /usr/bin/kyt/var.txt
 echo -e DOMAIN='"'$domain'"' >> /usr/bin/kyt/var.txt
 echo -e PUB='"'$PUB'"' >> /usr/bin/kyt/var.txt
 echo -e HOST='"'$NS'"' >> /usr/bin/kyt/var.txt
+chmod 600 /usr/bin/kyt/var.txt
 echo -e "#bot# $bottoken $admin" >/etc/bot/.bot.db
 clear
 
