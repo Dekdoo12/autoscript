@@ -20,3 +20,9 @@ wget -q https://raw.githubusercontent.com/Dekdoo12/autoscript/main/update.sh && 
 
 ### Port
 TROJAN/VLESS/VMESS/SS WS+gRPC 443, VLESS/VMESS non-TLS 80, SSH 22/2222/2223, OpenVPN 1194 (tcp) & 2200 (udp).
+
+### Xray OFF / gagal start
+Jalankan `fixxray` (setelah update) atau:
+```
+wget -q -O fixxray https://raw.githubusercontent.com/Dekdoo12/autoscript/main/Fls/fixxray.sh && bash fixxray
+```
