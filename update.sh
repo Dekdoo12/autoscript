@@ -2,8 +2,7 @@
 dateFromServer=$(curl -v --insecure --silent https://google.com/ 2>&1 | grep Date | sed -e 's/< Date: //')
 biji=`date +"%Y-%m-%d" -d "$dateFromServer"`
 red() { echo -e "\\033[32;1m${*}\\033[0m"; }
-rm -r /usr/local/sbin
-mkdir /usr/local/sbin
+mkdir -p /usr/local/sbin
 clear
 fun_bar() {
     CMD[0]="$1"
@@ -32,19 +31,17 @@ fun_bar() {
     tput cnorm
 }
 res1() {
-wget https://raw.githubusercontent.com/Dekdoo12/autoscript/main/Cdy/menu.zip
-7z x -pHeyHeyMauDecryptYaAwokawok menu.zip
-chmod +x menu/*
-mv menu/* /usr/local/sbin
-rm -rf menu
-rm -rf menu.zip
+tmpd=$(mktemp -d) && cd "$tmpd" || return 1
+wget -q https://raw.githubusercontent.com/Dekdoo12/autoscript/main/Cdy/menu.zip && unzip -o -q menu.zip && chmod +x menu/*
+rm -f menu/*~ menu/*.bak menu/m-noobz
+cp -f menu/* /usr/local/sbin/
+wget -q -O /usr/local/sbin/m-noobz https://raw.githubusercontent.com/Dekdoo12/autoscript/main/Cfg/m-noobz && chmod +x /usr/local/sbin/m-noobz
+cd / && rm -rf "$tmpd"
 if [ -f "/etc/slowdns/install.sh" ] && [ -f "/etc/slowdns/slowdns.env" ]; then
     echo "Slowdns Sudah Terinstall"
 else
     echo "Slowdns Belum Terpasang"
-wget -q -O /tmp/nameserver "https://raw.githubusercontent.com/Dekdoo12/autoscript/main/Cfg/slowdns.sh"
-chmod +x /tmp/nameserver
-/tmp/nameserver
+    wget -q -O /tmp/slowdns-setup "https://raw.githubusercontent.com/Dekdoo12/autoscript/main/Cfg/slowdns.sh" && bash /tmp/slowdns-setup
 fi
 }
 netfilter-persistent

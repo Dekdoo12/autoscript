@@ -1,45 +1,26 @@
-### INSTALL SCRIPT 
-<pre><code>apt update -y && apt install -y wget curl jq at screen && wget -q https://raw.githubusercontent.com/Dekdoo12/autoscript/main/v5.sh && chmod +x v5.sh && screen -S install ./v5.sh
-</code></pre>
+# Autoscript (Debian 12)
 
-### PERINTAH UPDATE 
-<pre><code>wget -q https://raw.githubusercontent.com/Dekdoo12/autoscript/main/update.sh && chmod +x update.sh && ./update.sh</code></pre>
-
-### FITUR TAMBAHAN
-- Tambah Swap 1GiB
-- Pemasangan yang dinamis
-- Tuning profile pada server
-- Xray Core
-- Penambahan fail2ban
-- Auto block sebagian ads indo by default
-- Auto clear log per 3 menit
-- Auto deler expired
-- User Details Akun
-
-### PORT INFO
+### INSTALL
 ```
-- TROJAN WS 443
-- TROJAN GRPC 443
-- SHADOWSOCKS WS 443
-- SHADOWSOCKS GRPC 443
-- VLESS WS 443
-- VLESS GRPC 443
-- VLESS NONTLS 80
-- VMESS WS 443
-- VMESS GRPC 443
-- VMESS NONTLS 80
-- SSH WS / TLS 443
-- SSH NON TLS 8880
-- OVPN SSL/TCP 1194
-- SLOWDNS 5300
+apt update -y && apt install -y wget curl jq at screen unzip && wget -q https://raw.githubusercontent.com/Dekdoo12/autoscript/main/v5.sh && chmod +x v5.sh && screen -S install ./v5.sh
 ```
 
-### SETTING CLOUDFLARE
+### UPDATE
 ```
-- SSL/TLS : FULL
-- SSL/TLS Recommender : OFF
-- GRPC : ON
-- WEBSOCKET : ON
-- Always Use HTTPS : OFF
-- UNDER ATTACK MODE : OFF
+wget -q https://raw.githubusercontent.com/Dekdoo12/autoscript/main/update.sh && chmod +x update.sh && ./update.sh
 ```
+
+### Struktur
+- `src/menu`, `src/bot`, `src/kyt` : sumber skrip (bisa diaudit). Setelah mengubah `src/`, jalankan `./build.sh` untuk membangun ulang `Cdy/menu.zip`, `Bot/bot.zip`, `Bot/kyt.zip` sebelum commit.
+- `Fls/`, `Cfg/`, `Vpn/` : file konfigurasi dan installer.
+
+### Yang perlu Anda siapkan sendiri (tidak ada di repo)
+- **Lisensi IP**: repo `Dekdoo12/izinsc` dengan file `ip` (format sama seperti sebelumnya).
+- **Cloudflare (opsional)**: `/root/.cf.env` (chmod 600) berisi `CF_TOKEN=...` dan `CF_ZONE_DOMAIN=...` milik Anda.
+- **Backup ke Google Drive (opsional)**: jalankan `rclone config`, buat remote bernama `dr`. Tanpa itu backup disimpan lokal di `/root/backups`.
+- **Email backup (opsional)**: isi akun SMTP Anda di `/etc/msmtprc`.
+- **Notifikasi Telegram saat install (opsional)**: `export KEY=<token> CHATID=<id>` sebelum menjalankan `v5.sh`.
+- **SlowDNS**: siapkan record NS yang mengarah ke domain VPS.
+
+### Port
+TROJAN/VLESS/VMESS/SS WS+gRPC 443, VLESS/VMESS non-TLS 80, SSH 22/2222/2223, OpenVPN 1194 (tcp) & 2200 (udp).
