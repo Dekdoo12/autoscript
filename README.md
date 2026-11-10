@@ -10,12 +10,8 @@ apt update -y && apt install -y wget curl jq at screen unzip && wget -q https://
 wget -q https://raw.githubusercontent.com/Dekdoo12/autoscript/main/update.sh && chmod +x update.sh && ./update.sh
 ```
 
-### Struktur
-- `src/menu`, `src/bot`, `src/kyt` : sumber skrip (bisa diaudit). Setelah mengubah `src/`, jalankan `./build.sh` untuk membangun ulang `Cdy/menu.zip`, `Bot/bot.zip`, `Bot/kyt.zip` sebelum commit.
-- `Fls/`, `Cfg/`, `Vpn/` : file konfigurasi dan installer.
-
 ### Yang perlu Anda siapkan sendiri (tidak ada di repo)
-- **Lisensi IP**: repo `Dekdoo12/izinsc` dengan file `ip` (format sama seperti sebelumnya).
+- **Lisensi IP**: repo `kizaruvpn/izinsc` dengan file `ip` (format sama seperti sebelumnya).
 - **Cloudflare (opsional)**: `/root/.cf.env` (chmod 600) berisi `CF_TOKEN=...` dan `CF_ZONE_DOMAIN=...` milik Anda.
 - **Backup ke Google Drive (opsional)**: jalankan `rclone config`, buat remote bernama `dr`. Tanpa itu backup disimpan lokal di `/root/backups`.
 - **Email backup (opsional)**: isi akun SMTP Anda di `/etc/msmtprc`.
