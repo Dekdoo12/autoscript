@@ -16,6 +16,32 @@ fix()  { echo -e "${Y}[FIX ]${N} $*"; }
 bad()  { echo -e "${R}[ !! ]${N} $*"; }
 step() { echo -e "\n${C}== $* ==${N}"; }
 
+# Pasang binary Xray langsung dari rilis resmi XTLS/Xray-core (tanpa installer XTLS)
+XRAY_BASE="${XRAY_BASE:-https://github.com/XTLS/Xray-core/releases/download}"
+install_xray_binary() {
+  local zip tmp
+  case "$(uname -m)" in
+    x86_64|amd64)  zip="Xray-linux-64.zip" ;;
+    aarch64|arm64) zip="Xray-linux-arm64-v8a.zip" ;;
+    armv7l|armv7)  zip="Xray-linux-arm32-v7a.zip" ;;
+    *) echo "Arsitektur $(uname -m) tidak didukung"; return 1 ;;
+  esac
+  command -v unzip >/dev/null 2>&1 || apt-get install -y unzip >/dev/null 2>&1
+  tmp=$(mktemp -d) || return 1
+  if ! curl -fL --retry 3 --connect-timeout 20 -o "$tmp/xray.zip" "${XRAY_BASE}/v${XVER}/${zip}"; then
+    echo "Gagal mengunduh ${XRAY_BASE}/v${XVER}/${zip}"; rm -rf "$tmp"; return 1
+  fi
+  unzip -q -o "$tmp/xray.zip" -d "$tmp" || { rm -rf "$tmp"; return 1; }
+  [ -f "$tmp/xray" ] || { echo "File xray tidak ada di dalam zip"; rm -rf "$tmp"; return 1; }
+  install -m 755 "$tmp/xray" /usr/local/bin/xray
+  mkdir -p /usr/local/share/xray
+  for f in geoip.dat geosite.dat; do
+    [ -s "/usr/local/share/xray/$f" ] || cp -f "$tmp/$f" /usr/local/share/xray/ 2>/dev/null
+  done
+  rm -rf "$tmp"
+  /usr/local/bin/xray version >/dev/null 2>&1
+}
+
 [ "$EUID" -eq 0 ] || { bad "Jalankan sebagai root"; exit 1; }
 FAILED=0
 
@@ -43,9 +69,10 @@ ok "user $XUSER ada"
 # ---------------------------------------------------------------- 3
 step "3. Binary Xray"
 if [ ! -x "$XRAY_BIN" ] || ! "$XRAY_BIN" version >/dev/null 2>&1; then
-  fix "binary Xray hilang/rusak, memasang ulang v$XVER"
-  bash -c "$(curl -fsSL https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install -u "$XUSER" --version "$XVER"
-  if [ ! -x "$XRAY_BIN" ] || ! "$XRAY_BIN" version >/dev/null 2>&1; then
+  fix "binary Xray hilang/rusak, memasang ulang v$XVER dari rilis resmi"
+  if install_xray_binary; then
+    ok "Xray v$XVER terpasang"
+  else
     bad "Gagal memasang Xray (cek koneksi VPS ke github.com)"; FAILED=1
   fi
 fi
