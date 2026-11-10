@@ -1,78 +1,39 @@
 #!/bin/bash
-MYIP=$(wget -qO- icanhazip.com);
-apt install jq curl -y
+# Buat subdomain A-record di Cloudflare milik ANDA sendiri.
+# Token TIDAK disimpan di repo. Isi lewat prompt, atau siapkan file /root/.cf.env (chmod 600):
+#   CF_TOKEN=xxxxx          (API Token dengan izin Zone:DNS:Edit untuk zona Anda)
+#   CF_ZONE_DOMAIN=domainanda.com
+apt-get install -y jq curl >/dev/null 2>&1
+[ -f /root/.cf.env ] && source /root/.cf.env
 clear
-echo -e ""
 echo -e "\033[96;1m============================\033[0m"
-echo -e "\033[95;1m      INPUT SUBDOMAIN  \033[0m"
+echo -e "\033[95;1m      INPUT SUBDOMAIN       \033[0m"
 echo -e "\033[96;1m============================\033[0m"
-echo -e "\033[91;1m Note. Pilih salah satu domain :\033[0m \033[93m 1. vpnnewbie.my.id  2. newbie-store.my.id\033[0m"
-echo -e "\033[91;1m Note. contoh Subdomain :\033[0m \033[93m Newbie \033[0m"
-read -p "PILIH DOMAIN    :  " DO
-echo -e " "
-read -p "SUBDOMAIN		 :  " SUB
-echo -e ""
-read -p "IP		         :  " IP
-echo -e ""
-SUB_DOMAIN=${SUB}.${DO}
-NS_DOMAIN=*.${SUB_DOMAIN}
-CF_KEY=""  # isi token Cloudflare milik kamu sendiri
-set -euo pipefail
-echo "Pointing Domain for $SUB_DOMAIN..."
-ZONE=$(
-		curl -sLX GET "https://api.cloudflare.com/client/v4/zones?name=${DO}&status=active" \
-		-H "Authorization: Bearer ${CF_KEY}" \
-		-H "Content-Type: application/json" | jq -r .result[0].id
-	)
-
-	RECORD=$(
-		curl -sLX GET "https://api.cloudflare.com/client/v4/zones/${ZONE}/dns_records?name=${SUB_DOMAIN}" \
-		-H "Authorization: Bearer ${CF_KEY}" \
-		-H "Content-Type: application/json" | jq -r .result[0].id
-	)
-
-		RECORD1=$(
-		curl -sLX GET "https://api.cloudflare.com/client/v4/zones/${ZONE}/dns_records?name=${NS_DOMAIN}" \
-		-H "Authorization: Bearer ${CF_KEY}" \
-		-H "Content-Type: application/json" | jq -r .result[0].id
-	)
-
-	if [[ "${#RECORD}" -le 10 ]]; then
-		RECORD=$(
-			curl -sLX POST "https://api.cloudflare.com/client/v4/zones/${ZONE}/dns_records" \
-			-H "Authorization: Bearer ${CF_KEY}" \
-			-H "Content-Type: application/json" \
-			--data '{"type":"A","name":"'${SUB_DOMAIN}'","content":"'${IP}'","proxied":false}' | jq -r .result.id
-		)
-	else
-		RESULT=$(
-		curl -sLX PUT "https://api.cloudflare.com/client/v4/zones/${ZONE}/dns_records/${RECORD}" \
-		-H "Authorization: Bearer ${CF_KEY}" \
-		-H "Content-Type: application/json" \
-		--data '{"type":"A","name":"'${SUB_DOMAIN}'","content":"'${IP}'","proxied":false}'
-	)
-	fi
-		
-	if [[ "${#RECORD1}" -le 10 ]]; then
-		RECORD2=$(
-			curl -sLX POST "https://api.cloudflare.com/client/v4/zones/${ZONE}/dns_records" \
-			-H "Authorization: Bearer ${CF_KEY}" \
-			-H "Content-Type: application/json" \
-			--data '{"type":"A","name":"'${NS_DOMAIN}'","content":"'${IP}'","proxied":true}' | jq -r .result.id
-		)
-	else
-
-	RESULT2=$(
-		curl -sLX PUT "https://api.cloudflare.com/client/v4/zones/${ZONE}/dns_records/${RECORD1}" \
-		-H "Authorization: Bearer ${CF_KEY}" \
-		-H "Content-Type: application/json" \
-		--data '{"type":"A","name":"'${NS_DOMAIN}'","content":"'${IP}'","proxied":true}'
-	)	
-	fi
-echo "$SUB_DOMAIN" > /root/domain
-echo "$SUB_DOMAIN" > /root/scdomain
-echo "$SUB_DOMAIN" > /etc/xray/domain
-echo "$SUB_DOMAIN" > /etc/v2ray/domain
-echo "$SUB_DOMAIN" > /etc/xray/scdomain
+[ -z "${CF_ZONE_DOMAIN:-}" ] && read -rp "Domain utama di Cloudflare (mis. example.com): " CF_ZONE_DOMAIN
+read -rp "Subdomain (mis. vpn)                          : " SUB
+if [ -z "${CF_TOKEN:-}" ]; then read -rsp "Cloudflare API Token (tidak ditampilkan)     : " CF_TOKEN; echo; fi
+IP=$(wget -qO- icanhazip.com)
+SUB=$(echo "$SUB" | tr -cd 'a-zA-Z0-9-')
+[ -z "$SUB" ] && { echo "Subdomain tidak valid"; exit 1; }
+SUB_DOMAIN="${SUB}.${CF_ZONE_DOMAIN}"
+API="https://api.cloudflare.com/client/v4"
+H=(-H "Authorization: Bearer ${CF_TOKEN}" -H "Content-Type: application/json")
+ZONE=$(curl -sL "${API}/zones?name=${CF_ZONE_DOMAIN}&status=active" "${H[@]}" | jq -r '.result[0].id')
+[ -z "$ZONE" ] || [ "$ZONE" = "null" ] && { echo "Zona tidak ditemukan / token salah"; exit 1; }
+rec_id() { curl -sL "${API}/zones/${ZONE}/dns_records?name=$1&type=A" "${H[@]}" | jq -r '.result[0].id'; }
+upsert() { # nama, proxied
+  local id; id=$(rec_id "$1")
+  local body; body=$(jq -n --arg n "$1" --arg c "$IP" --argjson p "$2" '{type:"A",name:$n,content:$c,proxied:$p}')
+  if [ -z "$id" ] || [ "$id" = "null" ]; then
+    curl -sL -X POST "${API}/zones/${ZONE}/dns_records" "${H[@]}" --data "$body" >/dev/null
+  else
+    curl -sL -X PUT "${API}/zones/${ZONE}/dns_records/${id}" "${H[@]}" --data "$body" >/dev/null
+  fi
+}
+echo "Pointing $SUB_DOMAIN -> $IP ..."
+upsert "$SUB_DOMAIN" false
+upsert "*.${SUB_DOMAIN}" true
+mkdir -p /etc/xray /etc/v2ray /var/lib/kyt
+for f in /root/domain /root/scdomain /etc/xray/domain /etc/v2ray/domain /etc/xray/scdomain; do echo "$SUB_DOMAIN" > "$f"; done
 echo "IP=$SUB_DOMAIN" > /var/lib/kyt/ipvps.conf
-cd
+unset CF_TOKEN
