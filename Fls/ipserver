@@ -39,8 +39,6 @@ cat >/etc/iptables/rules.v4 <<-END
 -A FORWARD -m string --string "peer_id=" --algo bm --to 65535 -j DROP
 -A FORWARD -m string --string ".torrent" --algo bm --to 65535 -j DROP
 -A FORWARD -m string --string "announce.php?passkey=" --algo bm --to 65535 -j DROP
--A FORWARD -m string --string "torrent" --algo bm --to 65535 -j DROP
--A FORWARD -m string --string "announce" --algo bm --to 65535 -j DROP
 -A FORWARD -m string --string "info_hash" --algo bm --to 65535 -j DROP
 -A FORWARD -m string --string "/default.ida?" --algo bm --to 65535 -j DROP
 -A FORWARD -m string --string ".exe?/c+dir" --algo bm --to 65535 -j DROP
@@ -53,7 +51,6 @@ cat >/etc/iptables/rules.v4 <<-END
 -A FORWARD -m string --string "find_node" --algo kmp --to 65535 -j DROP
 -A FORWARD -m string --string "info_hash" --algo kmp --to 65535 -j DROP
 -A FORWARD -m string --string "get_peers" --algo kmp --to 65535 -j DROP
--A FORWARD -m string --string "announce" --algo kmp --to 65535 -j DROP
 -A FORWARD -m string --string "announce_peers" --algo kmp --to 65535 -j DROP
 COMMIT
 # Completed on Tue Jul  4 23:37:53 2023
