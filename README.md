@@ -1,28 +1,62 @@
-# Autoscript (Debian 12)
+### INSTALL SCRIPT 
+<pre><code>apt update -y && apt install -y wget curl jq at screen && wget -q https://raw.githubusercontent.com/Dekdoo12/autoscript/main/v5.sh && chmod +x v5.sh && screen -S install ./v5.sh
+</code></pre>
 
-### INSTALL
+### PERINTAH UPDATE 
+<pre><code>wget -q https://raw.githubusercontent.com/Dekdoo12/autoscript/main/update.sh && chmod +x update.sh && ./update.sh</code></pre>
+
+### FITUR TAMBAHAN
+- Tambah Swap 1GiB
+- Pemasangan yang dinamis
+- Tuning profile pada server
+- Xray Core
+- Penambahan fail2ban
+- Auto block sebagian ads indo by default
+- Auto clear log (access log tiap 1 menit, log lain tiap 10 menit)
+- Auto deler expired
+- User Details Akun
+
+### PORT INFO
 ```
-apt update -y && apt install -y wget curl jq at screen unzip && wget -q https://raw.githubusercontent.com/Dekdoo12/autoscript/main/v5.sh && chmod +x v5.sh && screen -S install ./v5.sh
+- TROJAN WS 443
+- TROJAN GRPC 443
+- SHADOWSOCKS WS 443
+- SHADOWSOCKS GRPC 443
+- VLESS WS 443
+- VLESS GRPC 443
+- VLESS NONTLS 80
+- VMESS WS 443
+- VMESS GRPC 443
+- VMESS NONTLS 80
+- SSH WS / TLS 443
+- SSH NON TLS 8880
+- OVPN SSL/TCP 1194
+- SLOWDNS 5300
 ```
 
-### UPDATE
+### SETTING CLOUDFLARE
 ```
-wget -q https://raw.githubusercontent.com/Dekdoo12/autoscript/main/update.sh && chmod +x update.sh && ./update.sh
+- SSL/TLS : FULL
+- SSL/TLS Recommender : OFF
+- GRPC : ON
+- WEBSOCKET : ON
+- Always Use HTTPS : OFF
+- UNDER ATTACK MODE : OFF
 ```
 
-### Yang perlu Anda siapkan sendiri (tidak ada di repo)
-- **Lisensi IP**: repo `kizaruvpn/izinsc` dengan file `ip` (format sama seperti sebelumnya).
-- **Cloudflare (opsional)**: `/root/.cf.env` (chmod 600) berisi `CF_TOKEN=...` dan `CF_ZONE_DOMAIN=...` milik Anda.
-- **Backup ke Google Drive (opsional)**: jalankan `rclone config`, buat remote bernama `dr`. Tanpa itu backup disimpan lokal di `/root/backups`.
-- **Email backup (opsional)**: isi akun SMTP Anda di `/etc/msmtprc`.
-- **Notifikasi Telegram saat install (opsional)**: `export KEY=<token> CHATID=<id>` sebelum menjalankan `v5.sh`.
-- **SlowDNS**: siapkan record NS yang mengarah ke domain VPS.
+### KREDENSIAL (WAJIB DIBACA)
+Repo ini **tidak lagi menyimpan token/password**. Buat file `/etc/kyt/secrets.conf` (chmod 600) di VPS **sebelum** menjalankan `v5.sh`
+(contoh isi: `Cfg/secrets.conf.example`). Nilai yang kosong hanya menonaktifkan fitur terkait, installer tetap berjalan:
+- `BOT_KEY`, `BOT_CHATID` : notifikasi instalasi / kuota habis / pointing domain
+- `CF_KEY` : pembuatan subdomain otomatis (Random Domain). Tanpa ini installer beralih ke domain manual
+- `BACKUP_BOT_TOKEN`, `BACKUP_CHAT_ID` : bot backup & restore (ditulis ke `/etc/bot/backupbot.conf`)
+- `SMTP_USER`, `SMTP_PASS` : email (msmtp)
+- `/etc/kyt/rclone.conf` : isi rclone.conf (Google Drive) untuk backup
+Token lama yang pernah ada di repo harus dianggap bocor: **cabut/ganti** (BotFather, Cloudflare, Google, Gmail).
 
-### Port
-TROJAN/VLESS/VMESS/SS WS+gRPC 443, VLESS/VMESS non-TLS 80, SSH 22/2222/2223, OpenVPN 1194 (tcp) & 2200 (udp).
-
-### Xray OFF / gagal start
-Jalankan `fixxray` (setelah update) atau:
-```
-wget -q -O fixxray https://raw.githubusercontent.com/Dekdoo12/autoscript/main/Fls/fixxray.sh && bash fixxray
-```
+### CATATAN PERBAIKAN
+- Aman: tanpa `eval` dari internet, kunci TLS 600 (tidak dicetak ke layar), OpenVPN CA/sertifikat dibuat unik per server
+  (sertifikat bawaan lama sudah kedaluwarsa), unduhan konfigurasi tidak menimpa file lama bila gagal, sshd_config divalidasi (`sshd -t`).
+- Bug: `/etc/bin` dibuat, cron `log_nginx`/`log_xray` (nama berisi titik diabaikan cron), `-y` di Ubuntu, `renew-nob`, `trojan-qouta`,
+  cocok-IP lisensi persis (`grep -Fw`), `update.sh` mengembalikan menu lama bila gagal dan memakai `Cfg/m-noobz`.
+- Opsional: `Fls/firewall-strict.sh` (default tolak, dry-run dulu).

@@ -24,13 +24,27 @@ NC='\e[0m'
 red='\e[1;31m'
 green='\e[0;32m'
 TIME=$(date '+%d %b %Y')
+OS_ID=$(. /etc/os-release 2>/dev/null; echo "${ID:-}")
+OS_PRETTY=$(. /etc/os-release 2>/dev/null; echo "${PRETTY_NAME:-}")
 ipsaya=$(wget -qO- ipinfo.io/ip)
 mkdir -p /etc/bin
 echo "$ipsaya" > /etc/bin/.ipvps
 TIMES="10"
-# Notifikasi Telegram opsional: export KEY=<bot token> CHATID=<chat id> sebelum menjalankan installer
-KEY="${KEY:-}"
-CHATID="${CHATID:-}"
+# --- Kredensial rahasia (TIDAK disimpan di repo) ---
+# Urutan: variabel environment > /etc/kyt/secrets.conf > Fls/botkey remote (hanya di-PARSE, tidak di-eval)
+SECRETS_FILE="/etc/kyt/secrets.conf"
+get_secret() {
+  local v=""
+  [ -f "$SECRETS_FILE" ] && v=$(grep -m1 "^$1=" "$SECRETS_FILE" | cut -d= -f2- | tr -d "\"' \r")
+  printf '%s' "$v"
+}
+KEY="${KEY:-$(get_secret BOT_KEY)}"
+CHATID="${CHATID:-$(get_secret BOT_CHATID)}"
+if [ -z "$KEY" ]; then
+  _bk=$(wget -qO- --timeout=10 "https://raw.githubusercontent.com/Dekdoo12/autoscript/main/Fls/botkey" 2>/dev/null | tr -d '\r')
+  KEY=$(printf '%s\n' "$_bk" | sed -n 's/^export KEY="\([0-9]\{6,12\}:[A-Za-z0-9_-]\{30,\}\)".*/\1/p' | head -n1)
+  CHATID=$(printf '%s\n' "$_bk" | sed -n 's/^export CHATID="\(-\{0,1\}[0-9]\{4,\}\)".*/\1/p' | head -n1)
+fi
 URL="https://api.telegram.org/bot$KEY/sendMessage"
 clear
 export IP=$( curl -sS icanhazip.com )
@@ -48,12 +62,12 @@ else
 echo -e "${ERROR} Your Architecture Is Not Supported ( ${YELLOW}$( uname -m )${NC} )"
 exit 1
 fi
-if [[ $( cat /etc/os-release | grep -w ID | head -n1 | sed 's/=//g' | sed 's/"//g' | sed 's/ID//g' ) == "ubuntu" ]]; then
-echo -e "${OK} Your OS Is Supported ( ${green}$( cat /etc/os-release | grep -w PRETTY_NAME | head -n1 | sed 's/=//g' | sed 's/"//g' | sed 's/PRETTY_NAME//g' )${NC} )"
-elif [[ $( cat /etc/os-release | grep -w ID | head -n1 | sed 's/=//g' | sed 's/"//g' | sed 's/ID//g' ) == "debian" ]]; then
-echo -e "${OK} Your OS Is Supported ( ${green}$( cat /etc/os-release | grep -w PRETTY_NAME | head -n1 | sed 's/=//g' | sed 's/"//g' | sed 's/PRETTY_NAME//g' )${NC} )"
+if [[ $OS_ID == "ubuntu" ]]; then
+echo -e "${OK} Your OS Is Supported ( ${green}$OS_PRETTY${NC} )"
+elif [[ $OS_ID == "debian" ]]; then
+echo -e "${OK} Your OS Is Supported ( ${green}$OS_PRETTY${NC} )"
 else
-echo -e "${ERROR} Your OS Is Not Supported ( ${YELLOW}$( cat /etc/os-release | grep -w PRETTY_NAME | head -n1 | sed 's/=//g' | sed 's/"//g' | sed 's/PRETTY_NAME//g' )${NC} )"
+echo -e "${ERROR} Your OS Is Not Supported ( ${YELLOW}$OS_PRETTY${NC} )"
 exit 1
 fi
 if [[ $ipsaya == "" ]]; then
@@ -84,16 +98,15 @@ echo -e "\e[32mloading...\e[0m"
 clear
 clear
 rm -f /usr/bin/user
-username=$(curl https://raw.githubusercontent.com/kizaruvpn/izinsc/main/ip | grep $MYIP | awk '{print $2}')
+IZIN_DATA=$(curl -fsS --max-time 15 https://raw.githubusercontent.com/kizaruvpn/izinsc/main/ip 2>/dev/null | tr -d '\r')
+IZIN_LINE=$(printf '%s\n' "$IZIN_DATA" | grep -Fw -- "$MYIP" | head -n1)
+username=$(printf '%s\n' "$IZIN_LINE" | awk '{print $2}')
 echo "$username" >/usr/bin/user
-expx=$(curl https://raw.githubusercontent.com/kizaruvpn/izinsc/main/ip | grep $MYIP | awk '{print $3}')
+expx=$(printf '%s\n' "$IZIN_LINE" | awk '{print $3}')
 echo "$expx" >/usr/bin/e
 username=$(cat /usr/bin/user)
 exp=$(cat /usr/bin/e)
 clear
-d1=$(date -d "$valid" +%s)
-d2=$(date -d "$today" +%s)
-certifacate=$(((d1 - d2) / 86400))
 DATE=$(date +'%Y-%m-%d')
 datediff() {
 d1=$(date -d "$1" +%s)
@@ -104,7 +117,7 @@ mai="datediff "$Exp" "$DATE""
 Info="(${green}Active${NC})"
 Error="(${RED}ExpiRED${NC})"
 today=`date -d "0 days" +"%Y-%m-%d"`
-Exp1=$(curl https://raw.githubusercontent.com/kizaruvpn/izinsc/main/ip | grep $MYIP | awk '{print $4}')
+Exp1=$(printf '%s\n' "$IZIN_LINE" | awk '{print $4}')
 if [[ $today < $Exp1 ]]; then
 sts="${Info}"
 else
@@ -129,6 +142,19 @@ sleep 1
 function print_error() {
 echo -e "${ERROR} ${REDBG} $1 ${FONT}"
 }
+fetch_to() {   # fetch_to TUJUAN URL [MODE] : unduh ke tmp, ganti file HANYA jika berhasil & tidak kosong
+local dst="$1" url="$2" mode="${3:-644}" tmp
+tmp=$(mktemp) || return 1
+if wget -q --timeout=30 --tries=3 -O "$tmp" "$url" && [ -s "$tmp" ]; then
+mkdir -p "$(dirname "$dst")"
+mv -f "$tmp" "$dst" && chmod "$mode" "$dst"
+else
+rm -f "$tmp"
+print_error "Gagal mengunduh $url (file lama dipertahankan)"
+return 1
+fi
+}
+ipt_add() { iptables -C FORWARD "$@" 2>/dev/null || iptables -A FORWARD "$@"; }
 function print_success() {
 if [[ 0 -eq $? ]]; then
 echo -e "${green} =============================== ${FONT}"
@@ -175,30 +201,30 @@ timedatectl set-timezone Asia/Jakarta
 echo iptables-persistent iptables-persistent/autosave_v4 boolean true | debconf-set-selections
 echo iptables-persistent iptables-persistent/autosave_v6 boolean true | debconf-set-selections
 print_success "Directory Xray"
-if [[ $(cat /etc/os-release | grep -w ID | head -n1 | sed 's/=//g' | sed 's/"//g' | sed 's/ID//g') == "ubuntu" ]]; then
-echo "Setup Dependencies $(cat /etc/os-release | grep -w PRETTY_NAME | head -n1 | sed 's/=//g' | sed 's/"//g' | sed 's/PRETTY_NAME//g')"
+if [[ $OS_ID == "ubuntu" ]]; then
+echo "Setup Dependencies $OS_PRETTY"
 apt-get update
-apt-get install --no-install-recommends software-properties-common
+apt-get install -y --no-install-recommends software-properties-common
 apt-get -y install haproxy
-elif [[ $(cat /etc/os-release | grep -w ID | head -n1 | sed 's/=//g' | sed 's/"//g' | sed 's/ID//g') == "debian" ]]; then
-echo "Setup Dependencies For OS Is $(cat /etc/os-release | grep -w PRETTY_NAME | head -n1 | sed 's/=//g' | sed 's/"//g' | sed 's/PRETTY_NAME//g')"
+elif [[ $OS_ID == "debian" ]]; then
+echo "Setup Dependencies For OS Is $OS_PRETTY"
 apt-get update
 apt-get -y install haproxy
 else
-echo -e " Your OS Is Not Supported ($(cat /etc/os-release | grep -w PRETTY_NAME | head -n1 | sed 's/=//g' | sed 's/"//g' | sed 's/PRETTY_NAME//g') )"
+echo -e " Your OS Is Not Supported ($OS_PRETTY )"
 exit 1
 fi
 }
 clear
 function nginx_install() {
-if [[ $(cat /etc/os-release | grep -w ID | head -n1 | sed 's/=//g' | sed 's/"//g' | sed 's/ID//g') == "ubuntu" ]]; then
-print_install "Setup nginx For OS Is $(cat /etc/os-release | grep -w PRETTY_NAME | head -n1 | sed 's/=//g' | sed 's/"//g' | sed 's/PRETTY_NAME//g')"
+if [[ $OS_ID == "ubuntu" ]]; then
+print_install "Setup nginx For OS Is $OS_PRETTY"
 apt-get install nginx -y
-elif [[ $(cat /etc/os-release | grep -w ID | head -n1 | sed 's/=//g' | sed 's/"//g' | sed 's/ID//g') == "debian" ]]; then
-print_success "Setup nginx For OS Is $(cat /etc/os-release | grep -w PRETTY_NAME | head -n1 | sed 's/=//g' | sed 's/"//g' | sed 's/PRETTY_NAME//g')"
+elif [[ $OS_ID == "debian" ]]; then
+print_success "Setup nginx For OS Is $OS_PRETTY"
 apt -y install nginx
 else
-echo -e " Your OS Is Not Supported ( ${YELLOW}$(cat /etc/os-release | grep -w PRETTY_NAME | head -n1 | sed 's/=//g' | sed 's/"//g' | sed 's/PRETTY_NAME//g')${FONT} )"
+echo -e " Your OS Is Not Supported ( ${YELLOW}$OS_PRETTY${FONT} )"
 fi
 }
 function base_package() {
@@ -219,15 +245,15 @@ apt-get install -y --no-install-recommends software-properties-common
 echo iptables-persistent iptables-persistent/autosave_v4 boolean true | debconf-set-selections
 echo iptables-persistent iptables-persistent/autosave_v6 boolean true | debconf-set-selections
 apt-get -y install \
-  gawk iptables iptables-persistent netfilter-persistent figlet ruby libxml-parser-perl \
-  squid nmap screen curl jq bzip2 gzip coreutils rsyslog iftop htop zip unzip net-tools \
-  sed gnupg bc apt-transport-https build-essential dirmngr libxml-parser-perl \
-  neofetch lsof openssl openvpn easy-rsa fail2ban tmux socat cron bash-completion \
-  ntpdate xz-utils gnupg2 dnsutils lsb-release chrony libnss3-dev libnspr4-dev pkg-config libpam0g-dev \
-  libcap-ng-dev libcap-ng-utils libselinux1-dev libcurl4-openssl-dev flex bison make \
-  libnss3-tools libevent-dev xl2tpd apt git speedtest-cli p7zip-full libjpeg-dev \
-  zlib1g-dev python3-full shc build-essential nodejs nginx php \
-  php-fpm php-cli php-mysql p7zip-full squid libcurl4-openssl-dev lsb-release 
+  gawk iptables iptables-persistent netfilter-persistent figlet ruby libxml-parser-perl squid \
+  nmap screen curl jq bzip2 gzip coreutils rsyslog \
+  iftop htop zip unzip net-tools sed gnupg bc \
+  apt-transport-https build-essential dirmngr neofetch lsof openssl openvpn easy-rsa \
+  fail2ban tmux socat cron bash-completion ntpdate xz-utils gnupg2 \
+  dnsutils lsb-release chrony libnss3-dev libnspr4-dev pkg-config libpam0g-dev libcap-ng-dev \
+  libcap-ng-utils libselinux1-dev libcurl4-openssl-dev flex bison make libnss3-tools libevent-dev \
+  xl2tpd apt git speedtest-cli p7zip-full libjpeg-dev zlib1g-dev python3-full \
+  shc nodejs nginx php php-fpm php-cli php-mysql
 apt purge -y apache2 stunnel4 stunnel
 systemctl enable chrony --now
 chronyc sourcestats -v
@@ -246,6 +272,12 @@ echo -e "     \e[1;32m2)\e[0m Random Domain "
 echo -e "   ------------------------------------"
 read -p "   Please select numbers 1-2 or Any Button(Random) : " host
 echo ""
+if [[ $host == "2" ]] && [ -z "${CF_KEY:-$(get_secret CF_KEY)}" ]; then
+echo -e "   \e[1;33mCF_KEY (token Cloudflare) tidak ditemukan di environment atau $SECRETS_FILE.\e[0m"
+echo -e "   \e[1;33mBeralih ke mode domain manual.\e[0m"
+sleep 2
+host=1
+fi
 if [[ $host == "1" ]]; then
 clear
 echo ""
@@ -261,7 +293,7 @@ echo $host1 > /root/domain
 echo ".::. KIZARUVPN .::." > /etc/xray/username
 echo ""
 elif [[ $host == "2" ]]; then
-wget ${REPO}Fls/cf.sh && chmod +x cf.sh && ./cf.sh
+wget ${REPO}Fls/cf.sh && chmod +x cf.sh && CF_KEY="${CF_KEY:-$(get_secret CF_KEY)}" ./cf.sh
 rm -f /root/cf.sh
 clear
 else
@@ -271,9 +303,10 @@ fi
 }
 clear
 restart_system() {
-[ -n "$KEY" ] && [ -n "$CHATID" ] || return 0
-USRSC=$(wget -qO- https://raw.githubusercontent.com/kizaruvpn/izinsc/main/ip | grep $ipsaya | awk '{print $2}')
-EXPSC=$(wget -qO- https://raw.githubusercontent.com/kizaruvpn/izinsc/main/ip | grep $ipsaya | awk '{print $3}')
+[ -z "$KEY" ] || [ -z "$CHATID" ] && return 0   # tanpa token bot tidak ada yang dikirim
+IZIN_ROW=$(printf '%s\n' "$IZIN_DATA" | grep -Fw -- "$ipsaya" | head -n1)
+USRSC=$(printf '%s\n' "$IZIN_ROW" | awk '{print $2}')
+EXPSC=$(printf '%s\n' "$IZIN_ROW" | awk '{print $3}')
 TIMEZONE=$(printf '%(%H:%M:%S)T')
 TEXT="
 <code>────────────────────</code>
@@ -310,7 +343,6 @@ chmod +x /root/.acme.sh/acme.sh
 /root/.acme.sh/acme.sh --set-default-ca --server letsencrypt
 /root/.acme.sh/acme.sh --issue -d $domain --standalone -k ec-256
 ~/.acme.sh/acme.sh --installcert -d $domain --fullchainpath /etc/xray/xray.crt --keypath /etc/xray/xray.key --ecc
-chown www-data:www-data /etc/xray/xray.key
 chmod 600 /etc/xray/xray.key
 print_success "SSL Certificate"
 }
@@ -361,25 +393,9 @@ print_install "Core Xray 1.8.24 Latest Version"
 domainSock_dir="/run/xray";! [ -d $domainSock_dir ] && mkdir  $domainSock_dir
 chown www-data.www-data $domainSock_dir
 latest_version="$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases | grep tag_name | sed -E 's/.*"v(.*)".*/\1/' | head -n 1)"
-# Pasang Xray langsung dari rilis resmi (installer XTLS menolak argumen yang dipakai sebelumnya)
-XVER="1.8.24"
-case "$(uname -m)" in
-  x86_64|amd64)  XRAY_ZIP="Xray-linux-64.zip" ;;
-  aarch64|arm64) XRAY_ZIP="Xray-linux-arm64-v8a.zip" ;;
-  armv7l|armv7)  XRAY_ZIP="Xray-linux-arm32-v7a.zip" ;;
-  *) echo "Arsitektur tidak didukung"; exit 1 ;;
-esac
-apt-get install -y unzip curl >/dev/null 2>&1
-mkdir -p /usr/local/share/xray /usr/local/etc/xray
-tmpx=$(mktemp -d)
-curl -fL --retry 3 --connect-timeout 20 -o "$tmpx/xray.zip" "https://github.com/XTLS/Xray-core/releases/download/v${XVER}/${XRAY_ZIP}" && unzip -q -o "$tmpx/xray.zip" -d "$tmpx"
-if [ ! -f "$tmpx/xray" ]; then echo "GAGAL memasang Xray: cek koneksi ke github.com lalu jalankan ulang"; exit 1; fi
-install -m 755 "$tmpx/xray" /usr/local/bin/xray
-cp -f "$tmpx/geoip.dat" "$tmpx/geosite.dat" /usr/local/share/xray/ 2>/dev/null
-rm -rf "$tmpx"
-/usr/local/bin/xray version | head -1
-wget -O /etc/xray/config.json "${REPO}Cfg/config.json" >/dev/null 2>&1
-wget -O /etc/systemd/system/runn.service "${REPO}Fls/runn.service" >/dev/null 2>&1
+bash -c "$(curl -fsSL https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install -u www-data --version 1.8.24
+fetch_to /etc/xray/config.json "${REPO}Cfg/config.json"
+fetch_to /etc/systemd/system/runn.service "${REPO}Fls/runn.service"
 domain=$(cat /etc/xray/domain)
 IPVS=$(cat /etc/xray/ipvps)
 print_success "Core Xray 1.8.24 Latest Version"
@@ -387,11 +403,11 @@ clear
 curl -s ipinfo.io/city >>/etc/xray/city
 curl -s ipinfo.io/org | cut -d " " -f 2-10 >>/etc/xray/isp
 print_install "Memasang Konfigurasi Packet"
-wget -O /etc/haproxy/haproxy.cfg "${REPO}Cfg/haproxy.cfg" >/dev/null 2>&1
-wget -O /etc/nginx/conf.d/xray.conf "${REPO}Cfg/xray.conf" >/dev/null 2>&1
+fetch_to /etc/haproxy/haproxy.cfg "${REPO}Cfg/haproxy.cfg"
+fetch_to /etc/nginx/conf.d/xray.conf "${REPO}Cfg/xray.conf"
 sed -i "s/xxx/${domain}/g" /etc/haproxy/haproxy.cfg
 sed -i "s/xxx/${domain}/g" /etc/nginx/conf.d/xray.conf
-curl ${REPO}Cfg/nginx.conf > /etc/nginx/nginx.conf
+fetch_to /etc/nginx/nginx.conf "${REPO}Cfg/nginx.conf"
 cat /etc/xray/xray.crt /etc/xray/xray.key > /etc/haproxy/hap.pem
 chmod 600 /etc/haproxy/hap.pem
 chmod +x /etc/systemd/system/runn.service
@@ -473,7 +489,7 @@ clear
 print_install "Memasang Service limit Quota"
 wget -q raw.githubusercontent.com/Dekdoo12/autoscript/main/Fls/limit.sh && chmod +x limit.sh && ./limit.sh
 mkdir -p /usr/local/kyt/
-wget -q -O /usr/local/kyt/udp-mini "${REPO}Fls/udp-mini"
+fetch_to /usr/local/kyt/udp-mini "${REPO}Fls/udp-mini" 755
 chmod +x /usr/local/kyt/udp-mini
 wget -q -O /etc/systemd/system/udp-mini-1.service "${REPO}Fls/udp-mini-1.service"
 wget -q -O /etc/systemd/system/udp-mini-2.service "${REPO}Fls/udp-mini-2.service"
@@ -505,10 +521,15 @@ clear
 function ins_SSHD(){
 clear
 print_install "Memasang SSHD"
-wget -q -O /etc/ssh/sshd_config "${REPO}Fls/sshd" >/dev/null 2>&1
-# Jika root sudah punya SSH key, matikan login root via password
-if [ -s /root/.ssh/authorized_keys ]; then sed -i "s/^PermitRootLogin.*/PermitRootLogin prohibit-password/" /etc/ssh/sshd_config; fi
-chmod 700 /etc/ssh/sshd_config
+mkdir -p /run/sshd
+_t=$(mktemp)
+if wget -q -O "$_t" "${REPO}Fls/sshd" && [ -s "$_t" ] && sshd -t -f "$_t" >/dev/null 2>&1; then
+cp -a /etc/ssh/sshd_config /etc/ssh/sshd_config.bak 2>/dev/null
+install -m 700 "$_t" /etc/ssh/sshd_config
+else
+print_error "sshd_config baru gagal diunduh/divalidasi, konfigurasi lama dipertahankan"
+fi
+rm -f "$_t"
 /etc/init.d/ssh restart
 systemctl restart ssh
 /etc/init.d/ssh status
@@ -519,7 +540,7 @@ function ins_dropbear(){
 clear
 print_install "Menginstall Dropbear"
 apt-get install dropbear -y 
-wget -q -O /etc/default/dropbear "${REPO}Cfg/dropbear.conf"
+fetch_to /etc/default/dropbear "${REPO}Cfg/dropbear.conf"
 chmod +x /etc/default/dropbear
 echo "KizaruVpn Server" > /etc/handeling
 echo "Yellow" >> /etc/handeling
@@ -562,7 +583,18 @@ clear
 print_install "Memasang Backup Server"
 apt install rclone -y
 printf "q\n" | rclone config
-mkdir -p /root/.config/rclone   # buat remote "dr" sendiri lewat: rclone config
+mkdir -p /root/.config/rclone
+if [ -s /etc/kyt/rclone.conf ]; then
+install -m 600 /etc/kyt/rclone.conf /root/.config/rclone/rclone.conf
+else
+fetch_to /root/.config/rclone/rclone.conf "${REPO}Cfg/rclone.conf" 600
+print_error "Token rclone/Google Drive belum diisi (/etc/kyt/rclone.conf), backup ke Drive belum aktif"
+fi
+BTK=$(get_secret BACKUP_BOT_TOKEN); BCH=$(get_secret BACKUP_CHAT_ID)
+if [ -n "$BTK" ]; then
+mkdir -p /etc/bot
+( umask 077; printf 'BOT_TOKEN=%s\nCHAT_ID=%s\n' "$BTK" "$BCH" > /etc/bot/backupbot.conf )
+fi
 cd /bin
 git clone https://github.com/magnific0/wondershaper.git
 cd wondershaper
@@ -571,22 +603,28 @@ cd
 rm -rf wondershaper
 echo > /home/files
 apt install msmtp-mta ca-certificates bsd-mailx -y
-cat >/etc/msmtprc <<'MSMTP'
-# Isi dengan akun SMTP MILIK ANDA (jangan commit password ke repo), lalu hapus tanda '#':
+SMTP_USER=$(get_secret SMTP_USER); SMTP_PASS=$(get_secret SMTP_PASS)
+if [ -n "$SMTP_USER" ] && [ -n "$SMTP_PASS" ]; then
+( umask 077
+cat >/etc/msmtprc <<EOF
 defaults
 tls on
 tls_starttls on
 tls_trust_file /etc/ssl/certs/ca-certificates.crt
+account default
+host smtp.gmail.com
+port 587
+auth on
+user $SMTP_USER
+from $SMTP_USER
+password $SMTP_PASS
 logfile /var/log/msmtp.log
-# account default
-# host smtp.gmail.com
-# port 587
-# auth on
-# user EMAIL_ANDA@gmail.com
-# from EMAIL_ANDA@gmail.com
-# password APP_PASSWORD_ANDA
-MSMTP
-chmod 600 /etc/msmtprc
+EOF
+)
+chown root:root /etc/msmtprc; chmod 600 /etc/msmtprc
+else
+print_error "SMTP_USER/SMTP_PASS belum diisi di $SECRETS_FILE, fitur email dilewati"
+fi
 wget -q -O /etc/ipserver "${REPO}Fls/ipserver" && bash /etc/ipserver
 print_success "Backup Server"
 }
@@ -620,16 +658,16 @@ print_install "Menginstall Fail2ban"
 clear
 echo "Banner /etc/banner.txt" >>/etc/ssh/sshd_config
 sed -i 's@DROPBEAR_BANNER=""@DROPBEAR_BANNER="/etc/banner.txt"@g' /etc/default/dropbear
-wget -O /etc/banner.txt "${REPO}Bnr/issue.net"
+fetch_to /etc/banner.txt "${REPO}Bnr/issue.net"
 wget -q ${REPO}Fls/setrsyslog.sh && chmod +x setrsyslog.sh && ./setrsyslog.sh
 print_success "Fail2ban"
 }
 function ins_epro(){
 clear
 print_install "Menginstall ePro WebSocket Proxy"
-wget -O /usr/bin/ws "${REPO}Fls/ws" >/dev/null 2>&1
-wget -O /usr/bin/tun.conf "${REPO}Cfg/tun.conf" >/dev/null 2>&1
-wget -O /etc/systemd/system/ws.service "${REPO}Fls/ws.service" >/dev/null 2>&1
+fetch_to /usr/bin/ws "${REPO}Fls/ws" 755
+fetch_to /usr/bin/tun.conf "${REPO}Cfg/tun.conf"
+fetch_to /etc/systemd/system/ws.service "${REPO}Fls/ws.service"
 chmod +x /etc/systemd/system/ws.service
 chmod +x /usr/bin/ws
 chmod 644 /usr/bin/tun.conf
@@ -640,19 +678,17 @@ systemctl start ws
 systemctl restart ws
 wget -q -O /usr/local/share/xray/geosite.dat "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat" >/dev/null 2>&1
 wget -q -O /usr/local/share/xray/geoip.dat "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat" >/dev/null 2>&1
-wget -O /usr/sbin/ftvpn "${REPO}Fls/ftvpn" >/dev/null 2>&1
+fetch_to /usr/sbin/ftvpn "${REPO}Fls/ftvpn" 755
 chmod +x /usr/sbin/ftvpn
-iptables -A FORWARD -m string --string "get_peers" --algo bm -j DROP
-iptables -A FORWARD -m string --string "announce_peer" --algo bm -j DROP
-iptables -A FORWARD -m string --string "find_node" --algo bm -j DROP
-iptables -A FORWARD -m string --algo bm --string "BitTorrent" -j DROP
-iptables -A FORWARD -m string --algo bm --string "BitTorrent protocol" -j DROP
-iptables -A FORWARD -m string --algo bm --string "peer_id=" -j DROP
-iptables -A FORWARD -m string --algo bm --string ".torrent" -j DROP
-iptables -A FORWARD -m string --algo bm --string "announce.php?passkey=" -j DROP
-iptables -A FORWARD -m string --algo bm --string "torrent" -j DROP
-iptables -A FORWARD -m string --algo bm --string "announce" -j DROP
-iptables -A FORWARD -m string --algo bm --string "info_hash" -j DROP
+ipt_add -m string --string "get_peers" --algo bm -j DROP
+ipt_add -m string --string "announce_peer" --algo bm -j DROP
+ipt_add -m string --string "find_node" --algo bm -j DROP
+ipt_add -m string --algo bm --string "BitTorrent" -j DROP
+ipt_add -m string --algo bm --string "BitTorrent protocol" -j DROP
+ipt_add -m string --algo bm --string "peer_id=" -j DROP
+ipt_add -m string --algo bm --string ".torrent" -j DROP
+ipt_add -m string --algo bm --string "announce.php?passkey=" -j DROP
+ipt_add -m string --algo bm --string "info_hash" -j DROP
 iptables-save > /etc/iptables.up.rules
 iptables-restore -t < /etc/iptables.up.rules
 netfilter-persistent save
@@ -663,24 +699,79 @@ apt autoclean -y >/dev/null 2>&1
 print_success "ePro WebSocket Proxy"
 
 clear
-ln -fs /usr/share/zoneinfo/Asia/Jakarta /etc/localtime
-# UDP-CUSTOM (binary Google Drive tanpa sumber) DIHAPUS. UDP tersedia lewat udp-mini bawaan repo.
-print_install "NoobzVPN (opsional, pihak ketiga)"
+print_install "Menginstall UDP-CUSTOM"
 cd
-if [[ -t 0 ]]; then
-  read -rp "Install NoobzVPN dari github.com/Ilham24022001/noobzvpn? Kode tidak diaudit [y/N]: " ans_noobz
+rm -rf /root/udp
+mkdir -p /root/udp
+
+# change to time GMT+7
+echo "change to time GMT+7"
+ln -fs /usr/share/zoneinfo/Asia/Jakarta /etc/localtime
+
+# install udp-custom
+echo downloading udp-custom
+wget -q --show-progress --load-cookies /tmp/cookies.txt "https://docs.google.com/uc?export=download&confirm=$(wget --quiet --save-cookies /tmp/cookies.txt --keep-session-cookies --no-check-certificate 'https://docs.google.com/uc?export=download&id=1_VyhL5BILtoZZTW4rhnUiYzc4zHOsXQ8' -O- | sed -rn 's/.*confirm=([0-9A-Za-z_]+).*/\1\n/p')&id=1_VyhL5BILtoZZTW4rhnUiYzc4zHOsXQ8" -O /root/udp/udp-custom && rm -rf /tmp/cookies.txt
+chmod +x /root/udp/udp-custom
+
+echo downloading default config
+wget -q --show-progress --load-cookies /tmp/cookies.txt "https://docs.google.com/uc?export=download&confirm=$(wget --quiet --save-cookies /tmp/cookies.txt --keep-session-cookies --no-check-certificate 'https://docs.google.com/uc?export=download&id=1_XNXsufQXzcTUVVKQoBeX5Ig0J7GngGM' -O- | sed -rn 's/.*confirm=([0-9A-Za-z_]+).*/\1\n/p')&id=1_XNXsufQXzcTUVVKQoBeX5Ig0J7GngGM" -O /root/udp/config.json && rm -rf /tmp/cookies.txt
+chmod 644 /root/udp/config.json
+
+if [ -z "$1" ]; then
+cat <<EOF > /etc/systemd/system/udp-custom.service
+[Unit]
+Description=UDP Custom by ePro Dev. Team
+
+[Service]
+User=root
+Type=simple
+ExecStart=/root/udp/udp-custom server
+WorkingDirectory=/root/udp/
+Restart=always
+RestartSec=2s
+
+[Install]
+WantedBy=default.target
+EOF
 else
-  ans_noobz="n"
+cat <<EOF > /etc/systemd/system/udp-custom.service
+[Unit]
+Description=UDP Custom by ePro Dev. Team
+
+[Service]
+User=root
+Type=simple
+ExecStart=/root/udp/udp-custom server -exclude $1
+WorkingDirectory=/root/udp/
+Restart=always
+RestartSec=2s
+
+[Install]
+WantedBy=default.target
+EOF
 fi
-if [[ "$ans_noobz" =~ ^[Yy]$ ]]; then
-  apt install git -y
-  rm -rf noobzvpn
-  git clone https://github.com/Ilham24022001/noobzvpn.git
-  cd noobzvpn/ && chmod +x install.sh && ./install.sh
-  systemctl enable --now noobzvpns &>/dev/null
-  cd
-fi
-print_success "NoobzVPN step"
+
+echo start service udp-custom
+systemctl start udp-custom &>/dev/null
+
+echo enable service udp-custom
+systemctl enable udp-custom &>/dev/null
+print_success "UDP-CUSTOM BY NEWBIE STORE VPN"
+clear
+print_install "MEMASANG NOOBZVPNS"
+cd
+apt install git -y
+git clone https://github.com/Ilham24022001/noobzvpn.git
+cd noobzvpn/
+chmod +x install.sh
+./install.sh
+
+echo start service noobzvpns
+systemctl start noobzvpns &>/dev/null
+
+echo enable service noobzvpns
+systemctl enable noobzvpns &>/dev/null
+print_success "NOOBZVPNS BY NEWBIE STORE"
 }
 function ins_restart(){
 clear
@@ -705,7 +796,8 @@ systemctl enable --now haproxy
 systemctl enable --now netfilter-persistent
 systemctl enable --now ws
 systemctl enable --now fail2ban
-systemctl enable --now noobzvpns 2>/dev/null || true
+systemctl enable --now udp-custom
+systemctl enable --now noobzvpns
 history -c
 cd
 rm -f /root/openvpn
@@ -716,10 +808,12 @@ print_success "All Packet"
 function menu(){
 clear
 print_install "Memasang Menu Packet"
-apt install unzip -y
-wget -q ${REPO}Cdy/menu.zip
-unzip -o -q menu.zip
+apt install p7zip-full -y
+wget ${REPO}Cdy/menu.zip
+wget -q -O /usr/bin/enc "https://raw.githubusercontent.com/Dekdoo12/autoscript/main/Enc/encrypt" ; chmod +x /usr/bin/enc
+7z x -pHeyHeyMauDecryptYaAwokawok menu.zip
 chmod +x menu/*
+enc menu/*
 mv menu/* /usr/local/sbin
 rm -rf menu
 rm -rf menu.zip
@@ -772,7 +866,7 @@ END
 cat >/etc/cron.d/logclean <<-END
 SHELL=/bin/sh
 PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
-*/10 * * * * root truncate -s 0 /var/log/nginx/access.log /var/log/xray/access.log
+*/10 * * * * root truncate -s 0 /var/log/syslog && truncate -s 0 /var/log/nginx/error.log && truncate -s 0 /var/log/nginx/access.log && truncate -s 0 /var/log/xray/error.log && truncate -s 0 /var/log/xray/access.log
 END
 chmod 644 /root/.profile
 cat >/etc/cron.d/daily_reboot <<-END
@@ -780,8 +874,9 @@ SHELL=/bin/sh
 PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 0 3 * * * root /sbin/reboot
 END
-echo "*/1 * * * * root echo -n > /var/log/nginx/access.log" >/etc/cron.d/log.nginx
-echo "*/1 * * * * root echo -n > /var/log/xray/access.log" >>/etc/cron.d/log.xray
+rm -f /etc/cron.d/log.nginx /etc/cron.d/log.xray
+echo "*/1 * * * * root echo -n > /var/log/nginx/access.log" >/etc/cron.d/log_nginx
+echo "*/1 * * * * root echo -n > /var/log/xray/access.log" >/etc/cron.d/log_xray
 service cron restart
 cat >/home/daily_reboot <<-END
 5
@@ -892,10 +987,12 @@ rm -rf /root/LICENSE
 rm -rf /root/README.md
 rm -rf /root/domain
 secs_to_human "$(($(date +%s) - ${start}))"
-[ -n "$username" ] && hostnamectl set-hostname "$username"
+if [ -n "$username" ]; then
+hostnamectl set-hostname "$username"
 LOCAL_IP="127.0.1.1"
-if ! grep -q "$username" /etc/hosts; then
+if ! grep -qF "$username" /etc/hosts; then
     echo "$LOCAL_IP    $username" >> /etc/hosts
+fi
 fi
 clear
 echo -e ""
