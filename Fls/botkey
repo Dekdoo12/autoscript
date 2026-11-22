@@ -1,0 +1,3 @@
+# Jangan isi token di repo publik; gunakan /etc/kyt/secrets.conf (lihat Cfg/secrets.conf.example)
+export KEY=""
+export CHATID=""
