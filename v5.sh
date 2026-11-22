@@ -392,8 +392,12 @@ clear
 print_install "Core Xray 1.8.24 Latest Version"
 domainSock_dir="/run/xray";! [ -d $domainSock_dir ] && mkdir  $domainSock_dir
 chown www-data.www-data $domainSock_dir
-latest_version="$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases | grep tag_name | sed -E 's/.*"v(.*)".*/\1/' | head -n 1)"
+for _i in 1 2 3; do
 bash -c "$(curl -fsSL https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install -u www-data --version 1.8.24
+[ -x /usr/local/bin/xray ] && break
+print_error "Instalasi Xray gagal (percobaan $_i/3), mengulang..."; sleep 3
+done
+[ -x /usr/local/bin/xray ] || print_error "Binary Xray TIDAK terpasang. Periksa koneksi ke github.com lalu jalankan Fls/xray-repair.sh"
 fetch_to /etc/xray/config.json "${REPO}Cfg/config.json"
 fetch_to /etc/systemd/system/runn.service "${REPO}Fls/runn.service"
 domain=$(cat /etc/xray/domain)
@@ -412,7 +416,61 @@ cat /etc/xray/xray.crt /etc/xray/xray.key > /etc/haproxy/hap.pem
 chmod 600 /etc/haproxy/hap.pem
 chmod +x /etc/systemd/system/runn.service
 rm -rf /etc/systemd/system/xray.service.d
-cat >/etc/systemd/system/xray.service <<EOF
+cat >/usr/local/bin/xray-prestart <<'XRAYPRE'
+#!/bin/bash
+# Dijalankan sebagai root oleh systemd sebelum Xray start (ExecStartPre=+). Aman dijalankan manual.
+CFG=/etc/xray/config.json
+RUN=/run/xray/config.json
+[ -f "$CFG" ] || { echo "xray-prestart: $CFG tidak ada" >&2; exit 1; }
+# 1) log harus milik www-data (penyebab umum Xray gagal start: file log dibuat root)
+install -d -o www-data -g www-data -m 755 /var/log/xray
+touch /var/log/xray/access.log /var/log/xray/error.log
+chown www-data:www-data /var/log/xray/access.log /var/log/xray/error.log
+chmod 644 /var/log/xray/access.log /var/log/xray/error.log
+# 2) config berisi UUID/password akun: tidak boleh dibaca user lain
+chown root:www-data "$CFG"; chmod 640 "$CFG"
+# 3) salinan runtime tanpa baris penanda akun (#vless, #& user exp, ### user exp ...)
+install -d -o www-data -g www-data -m 750 /run/xray
+sed -e 's/\r$//' -e '/^[[:space:]]*#/d' "$CFG" > "$RUN"
+chown root:www-data "$RUN"; chmod 640 "$RUN"
+XRAYPRE
+chmod 755 /usr/local/bin/xray-prestart
+cat >/etc/systemd/system/xray.service <<'XRAYUNIT'
+[Unit]
+Description=Xray Service
+Documentation=https://github.com/XTLS/Xray-core
+After=network.target nss-lookup.target
+
+[Service]
+User=www-data
+Group=www-data
+RuntimeDirectory=xray
+RuntimeDirectoryMode=0750
+NoNewPrivileges=true
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ExecStartPre=+/usr/local/bin/xray-prestart
+ExecStartPre=/usr/local/bin/xray run -test -config /run/xray/config.json
+ExecStart=/usr/local/bin/xray run -config /run/xray/config.json
+Restart=on-failure
+RestartSec=3
+RestartPreventExitStatus=23
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+XRAYUNIT
+systemctl daemon-reload
+/usr/local/bin/xray-prestart
+if /usr/local/bin/xray run -test -config /run/xray/config.json >/tmp/xray-test.log 2>&1; then
+print_success "Uji konfigurasi Xray"
+else
+print_error "Konfigurasi Xray TIDAK valid:"; cat /tmp/xray-test.log
+fi
+rm -f /tmp/xray-test.log
 [Unit]
 Description=Xray Service
 Documentation=https://github.com

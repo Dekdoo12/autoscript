@@ -1,0 +1,16 @@
+#!/bin/bash
+# Dijalankan sebagai root oleh systemd sebelum Xray start (ExecStartPre=+). Aman dijalankan manual.
+CFG=/etc/xray/config.json
+RUN=/run/xray/config.json
+[ -f "$CFG" ] || { echo "xray-prestart: $CFG tidak ada" >&2; exit 1; }
+# 1) log harus milik www-data (penyebab umum Xray gagal start: file log dibuat root)
+install -d -o www-data -g www-data -m 755 /var/log/xray
+touch /var/log/xray/access.log /var/log/xray/error.log
+chown www-data:www-data /var/log/xray/access.log /var/log/xray/error.log
+chmod 644 /var/log/xray/access.log /var/log/xray/error.log
+# 2) config berisi UUID/password akun: tidak boleh dibaca user lain
+chown root:www-data "$CFG"; chmod 640 "$CFG"
+# 3) salinan runtime tanpa baris penanda akun (#vless, #& user exp, ### user exp ...)
+install -d -o www-data -g www-data -m 750 /run/xray
+sed -e 's/\r$//' -e '/^[[:space:]]*#/d' "$CFG" > "$RUN"
+chown root:www-data "$RUN"; chmod 640 "$RUN"

@@ -60,3 +60,12 @@ Token lama yang pernah ada di repo harus dianggap bocor: **cabut/ganti** (BotFat
 - Bug: `/etc/bin` dibuat, cron `log_nginx`/`log_xray` (nama berisi titik diabaikan cron), `-y` di Ubuntu, `renew-nob`, `trojan-qouta`,
   cocok-IP lisensi persis (`grep -Fw`), `update.sh` mengembalikan menu lama bila gagal dan memakai `Cfg/m-noobz`.
 - Opsional: `Fls/firewall-strict.sh` (default tolak, dry-run dulu).
+
+### XRAY BARU (ringan & stabil)
+- `Cfg/config.json` ditulis ulang: port, path, dan penanda akun (`#vless`, `#vmess`, ...) **sama persis** sehingga nginx/HAProxy dan semua menu tetap jalan.
+  Dibersihkan dari blok `api`/`stats`/`policy` ganda, field tak valid, dan `freedom` memakai `UseIPv4` (mencegah lag karena IPv6 mati).
+  Sniffing `routeOnly` (http/tls) mengaktifkan blokir BitTorrent yang di config lama tidak pernah aktif.
+- `xray.service` baru: tiap start otomatis memperbaiki kepemilikan file log, mengunci izin config (640), membuang baris penanda akun ke salinan runtime
+  `/run/xray/config.json` (Xray membaca JSON murni), lalu menguji config (`xray run -test`) sebelum jalan. Restart otomatis bila crash.
+- Server yang sudah terpasang: `bash Fls/xray-repair.sh` (akun dipertahankan bila config valid) atau `--reset-config` (paksa config baru, cadangan disimpan).
+- Diagnosa: `systemctl status xray -l`, `journalctl -u xray -n 40 --no-pager`.
