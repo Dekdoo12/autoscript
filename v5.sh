@@ -112,7 +112,9 @@ clear
 REPO="https://raw.githubusercontent.com/Dekdoo12/autoscript/main/"
 # ======================= [FIX-XRAY] BEGIN helper =======================
 # Sumber Xray: XTLS resmi. Config/haproxy/nginx tetap dari ${REPO} di atas.
-XRAY_VERSION="1.8.24"
+# [XRAY-TRANSPORTS] dinaikkan dari 1.8.24: XHTTP (pemisahan upload/download sungguhan) baru ada sejak rilis kalender v24.10.31/v24.11.x.
+# Uji dulu di satu VPS; ganti ke rilis lain bila perlu (daftar: https://github.com/XTLS/Xray-core/releases).
+XRAY_VERSION="26.2.6"
 XRAY_USER="www-data"
 # Disarankan: setelah Anda membaca isinya, ganti "main" dengan hash commit agar tidak berubah diam-diam.
 XRAY_INSTALL_URL="https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh"
@@ -183,6 +185,16 @@ xray_prepare_runtime() {
     chmod 755 /var/log/xray /run/xray
     chmod 644 /var/log/xray/*.log
     echo "d /run/xray 0755 $XRAY_USER $XRAY_USER -" > /etc/tmpfiles.d/xray.conf
+}
+
+# [XRAY-TRANSPORTS] HTTPUpgrade & XHTTP: inbound-nya diturunkan dari akun WS oleh xray-sync (dijalankan juga tiap Xray start)
+xray_install_sync() {
+    if dl "${REPO}Fls/xray-sync" /usr/local/bin/xray-sync 1000; then
+        chmod 755 /usr/local/bin/xray-sync
+        /usr/local/bin/xray-sync || true
+    else
+        print_error "Unduh xray-sync gagal: HTTPUpgrade/XHTTP tidak aktif (Xray biasa tetap jalan)"
+    fi
 }
 
 # Uji config dengan user yang sama seperti service (menangkap config rusak DAN masalah izin)
@@ -488,6 +500,7 @@ User=www-data
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
 AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
 NoNewPrivileges=true
+ExecStartPre=-+/usr/local/bin/xray-sync
 ExecStart=/usr/local/bin/xray run -config /etc/xray/config.json
 Restart=on-failure
 RestartSec=3
@@ -498,6 +511,7 @@ LimitNPROC=65535
 WantedBy=multi-user.target
 EOF
 xray_prepare_runtime
+xray_install_sync
 xray_verify
 print_success "Konfigurasi Packet"
 }

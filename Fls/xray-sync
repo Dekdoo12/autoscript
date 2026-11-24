@@ -1,0 +1,253 @@
+#!/usr/bin/env python3
+# xray-sync
+# Menurunkan inbound HTTPUpgrade & XHTTP dari akun WebSocket yang sudah ada di /etc/xray/config.json.
+#
+# Kenapa begini: semua skrip menu (add/del/renew/lock/expired/limit) hanya mengubah blok akun WS
+# lewat penanda #vless / #vmess / #trojanws. Skrip ini dijalankan SEBELUM Xray start
+# (ExecStartPre), sehingga setiap kali Xray di-restart oleh skrip-skrip itu, akun di inbound
+# HTTPUpgrade/XHTTP ikut disamakan. Tidak ada skrip menu yang perlu diubah untuk itu.
+#
+# Pemakaian:
+#   xray-sync            terapkan (aman: config tidak ditulis jika hasilnya tidak valid)
+#   xray-sync --check    hanya periksa & tampilkan ringkasan, tidak menulis apa pun
+#   xray-sync --remove   buang blok hasil xray-sync dari config.json
+#
+# Mode terapkan SELALU keluar dengan kode 0 agar tidak menggagalkan start Xray.
+
+import fcntl
+import json
+import os
+import re
+import sys
+
+CONF = os.environ.get("XRAY_CONF", "/etc/xray/config.json")
+BEGIN = "#xray-sync-begin (otomatis, jangan diedit)"
+END = "#xray-sync-end"
+
+# (tag, protokol, penanda sumber akun, port lokal, transport, pengaturan transport)
+SPEC = [
+    ("vless-hu", "vless", "#vless", "10021", "httpupgrade",
+     {"httpupgradeSettings": {"path": "/hu-vless"}}),
+    ("vmess-hu", "vmess", "#vmess", "10022", "httpupgrade",
+     {"httpupgradeSettings": {"path": "/hu-vmess"}}),
+    ("trojan-hu", "trojan", "#trojanws", "10023", "httpupgrade",
+     {"httpupgradeSettings": {"path": "/hu-trojan"}}),
+    ("vless-xhttp", "vless", "#vless", "10024", "xhttp",
+     {"xhttpSettings": {"path": "/xh-vless", "mode": "auto"}}),
+    ("trojan-xhttp", "trojan", "#trojanws", "10025", "xhttp",
+     {"xhttpSettings": {"path": "/xh-trojan", "mode": "auto"}}),
+]
+
+COMMENT = re.compile(r'^(?:#&|###|#!)\s+\S+(?:\s+\S+)?\s*$')
+FRAG_ID = re.compile(
+    r'^\},\{"id":\s*"([^"]+)"(?:,\s*"alterId":\s*"?\d+"?)?,\s*"email":\s*"([^"]+)"\s*$')
+FRAG_PW = re.compile(r'^\},\{"password":\s*"([^"]+)",\s*"email":\s*"([^"]+)"\s*$')
+KEY_ID = re.compile(r'"id"\s*:\s*"([^"]+)"')
+KEY_PW = re.compile(r'"password"\s*:\s*"([^"]+)"')
+
+
+def strip_comments(lines):
+    """Xray menerima baris komentar '#'; json.loads tidak, jadi buang untuk validasi."""
+    return "\n".join(l for l in lines if not l.lstrip().startswith("#"))
+
+
+def read_users(lines, marker, proto):
+    """Ambil klien default + akun yang disisipkan menu di bawah penanda `marker`."""
+    clients, seen = [], set()
+    idx = [i for i, l in enumerate(lines) if l.strip() == marker]
+    if len(idx) != 1:
+        raise ValueError("penanda %s ditemukan %d kali (harus 1)" % (marker, len(idx)))
+    m = idx[0]
+
+    # klien default: baris-baris di antara '{' pembuka dan penanda
+    j, block = m - 1, []
+    while j >= 0 and lines[j].strip() != "{":
+        block.append(lines[j])
+        j -= 1
+    text = "\n".join(reversed(block))
+    key = KEY_PW if proto == "trojan" else KEY_ID
+    d = key.search(text)
+    if d:
+        field = "password" if proto == "trojan" else "id"
+        clients.append({field: d.group(1)})
+        seen.add(d.group(1))
+
+    # akun tambahan: pasangan (baris komentar, baris pecahan JSON)
+    j = m + 1
+    while j + 1 < len(lines) and COMMENT.match(lines[j].strip()):
+        frag = lines[j + 1].strip()
+        mm = FRAG_PW.match(frag) if proto == "trojan" else FRAG_ID.match(frag)
+        if not mm:
+            break
+        secret, email = mm.group(1), mm.group(2)
+        if (secret, email) not in seen:
+            seen.add((secret, email))
+            if proto == "trojan":
+                clients.append({"password": secret, "email": email})
+            elif proto == "vmess":
+                clients.append({"id": secret, "alterId": 0, "email": email})
+            else:
+                clients.append({"id": secret, "email": email})
+        j += 2
+    return clients
+
+
+def build_inbounds(lines):
+    users = {}
+    for _, proto, marker, _, _, _ in SPEC:
+        if marker not in users:
+            users[marker] = read_users(lines, marker, proto)
+    out = []
+    for tag, proto, marker, port, net, extra in SPEC:
+        settings = {"clients": users[marker]}
+        if proto == "vless":
+            settings["decryption"] = "none"
+        stream = {"network": net}
+        stream.update(extra)
+        out.append({"tag": tag, "listen": "127.0.0.1", "port": port,
+                    "protocol": proto, "settings": settings, "streamSettings": stream})
+    return out
+
+
+def find_region(lines):
+    b = [i for i, l in enumerate(lines) if l.strip() == BEGIN]
+    e = [i for i, l in enumerate(lines) if l.strip() == END]
+    if not b and not e:
+        return None
+    if len(b) != 1 or len(e) != 1 or e[0] < b[0]:
+        raise ValueError("blok xray-sync rusak (penanda awal/akhir tidak lengkap)")
+    return b[0], e[0]
+
+
+def insertion_index(lines):
+    """Titik sisip: tepat sebelum ']' yang menutup array inbounds (sebelum \"outbounds\")."""
+    ob = [i for i, l in enumerate(lines) if re.match(r'^\s*"outbounds"\s*:', l)]
+    if len(ob) != 1:
+        raise ValueError('kunci "outbounds" ditemukan %d kali (harus 1)' % len(ob))
+    k = ob[0] - 1
+    while k >= 0 and (not lines[k].strip() or lines[k].lstrip().startswith("#")):
+        k -= 1
+    if k < 0 or not lines[k].strip().startswith("]"):
+        raise ValueError("penutup array inbounds tidak ditemukan")
+    return k
+
+
+def render(lines, inbounds):
+    region = [BEGIN]
+    for ib in inbounds:
+        txt = json.dumps(ib, indent=2).split("\n")
+        txt[0] = "," + txt[0]
+        region.extend(txt)
+    region.append(END)
+
+    base = list(lines)
+    r = find_region(base)
+    if r:
+        del base[r[0]:r[1] + 1]
+    k = insertion_index(base)
+    return base[:k] + region + base[k:]
+
+
+def validate(new_lines, expect_tags):
+    cfg = json.loads(strip_comments(new_lines))
+    tags = [i.get("tag") for i in cfg.get("inbounds", [])]
+    ports = [str(i.get("port")) for i in cfg.get("inbounds", [])]
+    for t in expect_tags:
+        if tags.count(t) != 1:
+            raise ValueError("tag %s muncul %d kali" % (t, tags.count(t)))
+    dup = sorted({p for p in ports if ports.count(p) > 1})
+    if dup:
+        raise ValueError("port bentrok: %s" % ", ".join(dup))
+    return cfg
+
+
+def atomic_write(path, text):
+    st = os.stat(path)
+    tmp = path + ".sync.tmp"
+    with open(tmp, "w", encoding="utf-8", newline="") as f:
+        f.write(text)
+        f.flush()
+        os.fsync(f.fileno())
+    os.chmod(tmp, st.st_mode & 0o777)
+    try:
+        os.chown(tmp, st.st_uid, st.st_gid)
+    except PermissionError:
+        pass
+    os.replace(tmp, path)
+
+
+def summary(cfg, tags):
+    by = {i.get("tag"): i for i in cfg["inbounds"]}
+    rows = []
+    for t in tags:
+        ib = by[t]
+        rows.append("%-13s 127.0.0.1:%-5s %-11s klien=%d" % (
+            t, ib["port"], ib["streamSettings"]["network"], len(ib["settings"]["clients"])))
+    return rows
+
+
+def main(argv):
+    mode = "apply"
+    if "--check" in argv:
+        mode = "check"
+    elif "--remove" in argv:
+        mode = "remove"
+
+    lock = None
+    try:
+        lockpath = "/run/xray-sync.lock" if os.access("/run", os.W_OK) else "/tmp/xray-sync.lock"
+        lock = open(lockpath, "w")
+        fcntl.flock(lock, fcntl.LOCK_EX)
+    except OSError:
+        lock = None
+
+    tags = [s[0] for s in SPEC]
+    try:
+        with open(CONF, "r", encoding="utf-8", newline="") as f:
+            text = f.read()
+        lines = text.split("\n")
+        json.loads(strip_comments(lines))  # config awal harus valid; jika tidak, jangan disentuh
+
+        if mode == "remove":
+            r = find_region(lines)
+            if not r:
+                print("xray-sync: tidak ada blok untuk dibuang")
+                return 0
+            new_lines = lines[:r[0]] + lines[r[1] + 1:]
+            validate_cfg = json.loads(strip_comments(new_lines))
+            atomic_write(CONF, "\n".join(new_lines))
+            print("xray-sync: blok dibuang (%d inbound tersisa)" % len(validate_cfg["inbounds"]))
+            return 0
+
+        inbounds = build_inbounds(lines)
+        new_lines = render(lines, inbounds)
+        cfg = validate(new_lines, tags)
+        new_text = "\n".join(new_lines)
+
+        if mode == "check":
+            print("config valid; hasil sinkronisasi:")
+            for row in summary(cfg, tags):
+                print("  " + row)
+            print("perlu ditulis ulang: %s" % ("ya" if new_text != text else "tidak"))
+            return 0
+
+        if new_text == text:
+            return 0
+        try:
+            with open(CONF + ".sync.bak", "w", encoding="utf-8", newline="") as b:
+                b.write(text)
+        except OSError:
+            pass
+        atomic_write(CONF, new_text)
+        print("xray-sync: %d inbound HTTPUpgrade/XHTTP disinkronkan" % len(tags))
+        return 0
+    except Exception as exc:  # noqa: BLE001 - jangan pernah menggagalkan start Xray
+        sys.stderr.write("xray-sync: dilewati, config tidak diubah (%s)\n" % exc)
+        return 1 if mode == "check" else 0
+    finally:
+        if lock:
+            lock.close()
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
