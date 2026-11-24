@@ -113,8 +113,8 @@ REPO="https://raw.githubusercontent.com/Dekdoo12/autoscript/main/"
 # ======================= [FIX-XRAY] BEGIN helper =======================
 # Sumber Xray: XTLS resmi. Config/haproxy/nginx tetap dari ${REPO} di atas.
 # [XRAY-TRANSPORTS] dinaikkan dari 1.8.24: XHTTP (pemisahan upload/download sungguhan) baru ada sejak rilis kalender v24.10.31/v24.11.x.
-# Uji dulu di satu VPS; ganti ke rilis lain bila perlu (daftar: https://github.com/XTLS/Xray-core/releases).
-XRAY_VERSION="26.2.6"
+# 26.11.9 = versi yang sudah berjalan di salah satu VPS Anda. Ganti bila perlu (daftar: https://github.com/XTLS/Xray-core/releases).
+XRAY_VERSION="26.11.9"
 XRAY_USER="www-data"
 # Disarankan: setelah Anda membaca isinya, ganti "main" dengan hash commit agar tidak berubah diam-diam.
 XRAY_INSTALL_URL="https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh"

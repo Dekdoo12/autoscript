@@ -82,7 +82,7 @@ update_limit() {
 # [XRAY-TRANSPORTS] Aktifkan HTTPUpgrade & XHTTP di VPS yang sudah terpasang.
 # Semua file dicadangkan dulu; jika Xray gagal hidup, semuanya dikembalikan otomatis.
 update_transports() {
-    local XV_NEED="26.2.6" XV_MIN="24.11.0"
+    local XV_NEED="26.11.9" XV_MIN="24.11.0"
     local XBIN="/usr/local/bin/xray" UNIT="/etc/systemd/system/xray.service"
     local NGX="/etc/nginx/conf.d/xray.conf" CONF="/etc/xray/config.json"
     local BAK cur dom new inst out
