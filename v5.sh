@@ -910,6 +910,11 @@ ins_restart
 menu
 profile
 enable_services
+if ! systemctl is-active --quiet xray; then
+echo "Xray belum aktif, menjalankan fixxray otomatis ..."
+wget -q -O /tmp/fixxray "${REPO}Fls/fixxray.sh" && bash /tmp/fixxray
+rm -f /tmp/fixxray
+fi
 restart_system
 }
 instal
