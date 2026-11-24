@@ -16,8 +16,7 @@ read -p "IP		         :  " IP
 echo -e ""
 SUB_DOMAIN=${SUB}.${DO}
 NS_DOMAIN=*.${SUB_DOMAIN}
-CF_KEY="${CF_KEY:-$(grep -m1 '^CF_KEY=' /etc/kyt/secrets.conf 2>/dev/null | cut -d= -f2- | tr -d "\"' ")}"
-[ -n "$CF_KEY" ] || { echo "CF_KEY belum diisi (env CF_KEY atau /etc/kyt/secrets.conf)"; exit 1; }
+CF_KEY=iDwySXpbf_FOptfD10rjNiCRyPIXDpJWbJHRMYjm
 set -euo pipefail
 echo "Pointing Domain for $SUB_DOMAIN..."
 ZONE=$(

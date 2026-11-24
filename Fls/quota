@@ -1,10 +1,8 @@
 #!/bin/bash
-_sec() { grep -m1 "^$1=" /etc/kyt/secrets.conf 2>/dev/null | cut -d= -f2- | tr -d "\"' \r" || true; }
 
 function send-log(){
-CHATID="$(_sec BOT_CHATID)"
-KEY="$(_sec BOT_KEY)"
-[ -n "$KEY" ] || return 0
+CHATID="6617783693"
+KEY="6751589620:AAHwjP6dzZhuqeyUOdYFc6742Q1YUVF1EjM"
 TIME="10"
 URL="https://api.telegram.org/bot$KEY/sendMessage"
 TEXT="

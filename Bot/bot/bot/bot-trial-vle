@@ -278,7 +278,7 @@ if [[ ${c} != "0" ]]; then
   mkdir -p /etc/limit/vless
   [[ -e /etc/limit/vless/${user} ]] || echo "0" > /etc/limit/vless/${user}
 fi
-echo "/usr/local/sbin/expire-trial vless $user $exp" | at now + $waktu_ekspirasi_menit minutes &> /dev/null
+echo sed -i '/\bTrial-VL\b/,/^},{/d' /etc/xray/config.json | at now + $waktu_ekspirasi_menit minutes &> /dev/null
 clear
      
 curl -s -o /dev/null -X POST "https://api.telegram.org/bot$KEY/sendMessage" \

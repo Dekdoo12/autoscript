@@ -1,5 +1,4 @@
 #!/bin/bash
-_sec() { grep -m1 "^$1=" /etc/kyt/secrets.conf 2>/dev/null | cut -d= -f2- | tr -d "\"' \r" || true; }
 Green="\e[92;1m"
 RED="\033[1;31m"
 YELLOW="\033[33m"
@@ -33,7 +32,7 @@ read -p "IP        :  " IP
 echo -e ""
 SUB_DOMAIN=${SUB}.${DO}
 NS_DOMAIN=*.${SUB_DOMAIN}
-CF_KEY="${CF_KEY:-$(_sec CF_KEY)}"
+CF_KEY=iDwySXpbf_FOptfD10rjNiCRyPIXDpJWbJHRMYjm
 set -euo pipefail
 echo "Pointing Domain for $SUB_DOMAIN..."
 ZONE=$(
@@ -87,8 +86,8 @@ ZONE=$(
 	)	
 	fi
 clear
-CHATID="$(_sec BOT_CHATID)"
-KEY="$(_sec BOT_KEY)"
+CHATID="6701388433"
+KEY="7193848831:AAFhSNDpbE3NKIb0_lzG2i-O2IN7SEas_1Q"
 TIMES="10"
 URL="https://api.telegram.org/bot$KEY/sendMessage"
 TEXT="_______________________________

@@ -96,7 +96,6 @@ echo -e DOMAIN='"'$domain'"' >> /usr/bin/kyt/var.txt
 echo -e PUB='"'$PUB'"' >> /usr/bin/kyt/var.txt
 echo -e HOST='"'$NS'"' >> /usr/bin/kyt/var.txt
 echo -e "#bot# $bottoken $admin" >/etc/bot/.bot.db
-chmod 600 /usr/bin/kyt/var.txt /etc/bot/.bot.db
 clear
 
 cat > /etc/systemd/system/kyt.service << END

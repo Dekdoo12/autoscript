@@ -110,7 +110,7 @@ baris_panjang
 echo
 echo
 read -p " Minutes : " pup
-echo "/usr/local/sbin/expire-trial ssh ${Login}" | at now + $pup minutes &> /dev/null
+echo userdel ${Login} | at now + $pup minutes &> /dev/null
      
 TEXT="<code>◇━━━━━━━━━━━━━━━━━◇</code>
 <code>Your Premium VPN Details</code>

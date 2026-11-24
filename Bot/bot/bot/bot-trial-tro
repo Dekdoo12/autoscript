@@ -253,7 +253,7 @@ if [[ ${c} != "0" ]]; then
   mkdir -p /etc/limit/trojan
   [[ -e /etc/limit/trojan/${user} ]] || echo "0" > /etc/limit/trojan/${user}
 fi
-echo "/usr/local/sbin/expire-trial trojan $user $exp" | at now + $waktu_ekspirasi_menit minutes &> /dev/null
+echo sed -i "/^#! $user $exp/,/^},{/d" /etc/xray/config.json | at now + $waktu_ekspirasi_menit minutes &> /dev/null
 clear
 curl -s -o /dev/null -X POST "https://api.telegram.org/bot$KEY/sendMessage" \
 -F chat_id="$CHATID" \

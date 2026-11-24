@@ -54,22 +54,8 @@ ekstrak_menu() {
 pasang_menu() {
     cd "$WORK" || return 1
     chmod +x menu/*
-    # menu lama dicadangkan dulu; dikembalikan otomatis jika pemasangan gagal
-    rm -rf /usr/local/sbin.old
-    mv /usr/local/sbin /usr/local/sbin.old 2>/dev/null
-    mkdir -p /usr/local/sbin
-    if ! mv menu/* /usr/local/sbin/; then
-        rm -rf /usr/local/sbin; mv /usr/local/sbin.old /usr/local/sbin
-        echo "   gagal memasang menu baru, menu lama dikembalikan"; return 1
-    fi
-    # samakan dengan v5.sh: m-noobz berasal dari Cfg/m-noobz
-    if $WGET -O /tmp/m-noobz "$REPO/Cfg/m-noobz" && [[ -s /tmp/m-noobz ]]; then
-        install -m 755 /tmp/m-noobz /usr/local/sbin/m-noobz
-    else
-        echo "   m-noobz dari repo gagal diunduh, memakai versi di menu.zip"
-    fi
-    rm -f /tmp/m-noobz
-    rm -rf /usr/local/sbin.old
+    rm -rf /usr/local/sbin && mkdir -p /usr/local/sbin
+    mv menu/* /usr/local/sbin/ || return 1
     echo "   terpasang di /usr/local/sbin"
 }
 
