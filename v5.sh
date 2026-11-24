@@ -358,6 +358,12 @@ print_install "Core Xray ${XRAY_VER}"
 domainSock_dir="/run/xray";! [ -d $domainSock_dir ] && mkdir  $domainSock_dir
 chown www-data.www-data $domainSock_dir
 bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install -u www-data --version ${XRAY_VER}
+if [ ! -x /usr/local/bin/xray ]; then
+echo "Xray-install gagal, memasang langsung dari rilis resmi XTLS ..."
+wget -q -O /tmp/update-xray.sh "${REPO}update-xray.sh" && bash /tmp/update-xray.sh --install-only "${XRAY_VER}"
+rm -f /tmp/update-xray.sh
+fi
+mkdir -p /usr/local/share/xray
 wget -O /etc/xray/config.json "${REPO}Cfg/config.json" >/dev/null 2>&1
 wget -O /etc/systemd/system/runn.service "${REPO}Fls/runn.service" >/dev/null 2>&1
 domain=$(cat /etc/xray/domain)
