@@ -110,120 +110,8 @@ fi
 echo -e "\e[32mloading...\e[0m"
 clear
 REPO="https://raw.githubusercontent.com/Dekdoo12/autoscript/main/"
-# ======================= [FIX-XRAY] BEGIN helper =======================
-# Sumber Xray: XTLS resmi. Config/haproxy/nginx tetap dari ${REPO} di atas.
-# [XRAY-TRANSPORTS] dinaikkan dari 1.8.24: XHTTP (pemisahan upload/download sungguhan) baru ada sejak rilis kalender v24.10.31/v24.11.x.
-# 26.11.9 = versi yang sudah berjalan di salah satu VPS Anda. Ganti bila perlu (daftar: https://github.com/XTLS/Xray-core/releases).
-XRAY_VERSION="26.11.9"
-XRAY_USER="www-data"
-# Disarankan: setelah Anda membaca isinya, ganti "main" dengan hash commit agar tidak berubah diam-diam.
-XRAY_INSTALL_URL="https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh"
-XRAY_RELEASE_BASE="${XRAY_RELEASE_BASE:-https://github.com/XTLS/Xray-core/releases/download}"
-XRAY_FAILED=0
-
-# dl <url> <tujuan> [ukuran_minimal_byte]
-# Mengunduh ke file sementara; file tujuan HANYA diganti jika unduhan sukses (HTTP ok) dan cukup besar.
-# (wget -O lama mengosongkan file tujuan lebih dulu, sehingga unduhan gagal = file 0 byte tanpa pesan)
-dl() {
-    local url="$1" dest="$2" min="${3:-1}" tmp
-    tmp="$(mktemp)" || return 1
-    if curl -fsSL --retry 3 --connect-timeout 20 -o "$tmp" "$url" \
-       && [ "$(stat -c%s "$tmp" 2>/dev/null || echo 0)" -ge "$min" ]; then
-        mv -f "$tmp" "$dest" && chmod 644 "$dest"
-        return $?
-    fi
-    rm -f "$tmp"
-    return 1
-}
-
-# Cadangan: pasang biner langsung dari rilis resmi XTLS/Xray-core + cek SHA256 dari file .dgst resmi
-xray_install_from_release() {
-    local tmp zip base want got f
-    [ "$(uname -m)" = "x86_64" ] || return 1
-    zip="Xray-linux-64.zip"
-    base="${XRAY_RELEASE_BASE}/v${XRAY_VERSION}"
-    tmp="$(mktemp -d)" || return 1
-    curl -fsSL --retry 3 --connect-timeout 20 -o "$tmp/x.zip" "${base}/${zip}" \
-        || { echo "Gagal mengunduh ${base}/${zip}"; rm -rf "$tmp"; return 1; }
-    curl -fsSL --retry 3 --connect-timeout 20 -o "$tmp/x.dgst" "${base}/${zip}.dgst" \
-        || { echo "Gagal mengunduh file checksum (.dgst)"; rm -rf "$tmp"; return 1; }
-    want="$(awk -F'= ' '/256=/ {print $2; exit}' "$tmp/x.dgst" | tr -d ' \r')"
-    got="$(sha256sum "$tmp/x.zip" | awk '{print $1}')"
-    if [ -z "$want" ] || [ "$want" != "$got" ]; then
-        echo "Checksum Xray TIDAK cocok, instalasi dibatalkan"; rm -rf "$tmp"; return 1
-    fi
-    unzip -q -o "$tmp/x.zip" -d "$tmp" && [ -f "$tmp/xray" ] \
-        || { echo "Isi zip Xray tidak valid"; rm -rf "$tmp"; return 1; }
-    install -m 755 "$tmp/xray" /usr/local/bin/xray
-    mkdir -p /usr/local/share/xray
-    for f in geoip.dat geosite.dat; do
-        [ -s "/usr/local/share/xray/$f" ] || cp -f "$tmp/$f" /usr/local/share/xray/ 2>/dev/null
-    done
-    rm -rf "$tmp"
-    /usr/local/bin/xray version >/dev/null 2>&1
-}
-
-# Utama: installer resmi XTLS (diunduh ke file dulu, bukan bash -c "$(curl ...)"), lalu cadangan di atas
-xray_install_core() {
-    local inst="/tmp/xray-install-release.sh"
-    if dl "$XRAY_INSTALL_URL" "$inst" 1000 \
-       && bash "$inst" install -u "$XRAY_USER" --version "$XRAY_VERSION" \
-       && [ -x /usr/local/bin/xray ] && /usr/local/bin/xray version >/dev/null 2>&1; then
-        rm -f "$inst"
-        return 0
-    fi
-    rm -f "$inst"
-    echo "Installer XTLS gagal; mencoba rilis resmi XTLS/Xray-core langsung..."
-    xray_install_from_release
-}
-
-# Log & folder runtime harus milik user yang menjalankan Xray (www-data), bukan root
-xray_prepare_runtime() {
-    mkdir -p /var/log/xray /run/xray /etc/tmpfiles.d
-    touch /var/log/xray/access.log /var/log/xray/error.log
-    chown -R "$XRAY_USER:$XRAY_USER" /var/log/xray /run/xray
-    chmod 755 /var/log/xray /run/xray
-    chmod 644 /var/log/xray/*.log
-    echo "d /run/xray 0755 $XRAY_USER $XRAY_USER -" > /etc/tmpfiles.d/xray.conf
-}
-
-# [XRAY-TRANSPORTS] HTTPUpgrade & XHTTP: inbound-nya diturunkan dari akun WS oleh xray-sync (dijalankan juga tiap Xray start)
-xray_install_sync() {
-    if dl "${REPO}Fls/xray-sync" /usr/local/bin/xray-sync 1000; then
-        chmod 755 /usr/local/bin/xray-sync
-        /usr/local/bin/xray-sync || true
-    else
-        print_error "Unduh xray-sync gagal: HTTPUpgrade/XHTTP tidak aktif (Xray biasa tetap jalan)"
-    fi
-}
-
-# Uji config dengan user yang sama seperti service (menangkap config rusak DAN masalah izin)
-xray_verify() {
-    local out
-    if [ ! -x /usr/local/bin/xray ]; then
-        XRAY_FAILED=1; echo "[XRAY] biner /usr/local/bin/xray tidak ada"; return 1
-    fi
-    if [ ! -s /etc/xray/config.json ]; then
-        XRAY_FAILED=1; echo "[XRAY] /etc/xray/config.json kosong/tidak ada"; return 1
-    fi
-    if ! out="$(runuser -u "$XRAY_USER" -- /usr/local/bin/xray run -test -config /etc/xray/config.json 2>&1)"; then
-        XRAY_FAILED=1; echo "[XRAY] config/izin bermasalah:"; echo "$out" | tail -8; return 1
-    fi
-    return 0
-}
-
-# Dipanggil setelah semua service di-restart: pastikan Xray benar-benar aktif
-xray_check_running() {
-    sleep 3
-    if systemctl is-active --quiet xray; then
-        return 0
-    fi
-    XRAY_FAILED=1
-    echo -e "${RED}[XRAY] service TIDAK aktif. Log terakhir:${FONT}"
-    journalctl -u xray -n 15 --no-pager 2>/dev/null | tail -15
-    return 1
-}
-# ======================== [FIX-XRAY] END helper ========================
+# Versi Xray dipin (ubah di sini saja). Jangan pakai "latest" otomatis.
+XRAY_VER="26.11.9"
 start=$(date +%s)
 secs_to_human() {
 echo "Installation time : $((${1} / 3600)) hours $(((${1} / 60) % 60)) minute's $((${1} % 60)) seconds"
@@ -420,8 +308,7 @@ chmod +x /root/.acme.sh/acme.sh
 /root/.acme.sh/acme.sh --set-default-ca --server letsencrypt
 /root/.acme.sh/acme.sh --issue -d $domain --standalone -k ec-256
 ~/.acme.sh/acme.sh --installcert -d $domain --fullchainpath /etc/xray/xray.crt --keypath /etc/xray/xray.key --ecc
-chown root:"$XRAY_USER" /etc/xray/xray.key   # [FIX-XRAY] sebelumnya chmod 777 (private key terbaca semua user)
-chmod 640 /etc/xray/xray.key
+chmod 777 /etc/xray/xray.key
 print_success "SSL Certificate"
 }
 function make_folder_xray() {
@@ -467,27 +354,25 @@ echo "& plughin Account" >>/etc/ssh/.ssh.db
 }
 function install_xray() {
 clear
-print_install "Core Xray ${XRAY_VERSION} (XTLS resmi)"
+print_install "Core Xray ${XRAY_VER}"
 domainSock_dir="/run/xray";! [ -d $domainSock_dir ] && mkdir  $domainSock_dir
 chown www-data.www-data $domainSock_dir
-# [FIX-XRAY] baris latest_version dihapus: tidak pernah dipakai (versi dikunci ke XRAY_VERSION)
-xray_install_core || { XRAY_FAILED=1; print_error "Pemasangan biner Xray GAGAL (cek koneksi ke github.com)"; }
-dl "${REPO}Cfg/config.json" /etc/xray/config.json 100 || { XRAY_FAILED=1; print_error "Unduh config.json GAGAL"; }
-dl "${REPO}Fls/runn.service" /etc/systemd/system/runn.service 10 || print_error "Unduh runn.service gagal"
+bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install -u www-data --version ${XRAY_VER}
+wget -O /etc/xray/config.json "${REPO}Cfg/config.json" >/dev/null 2>&1
+wget -O /etc/systemd/system/runn.service "${REPO}Fls/runn.service" >/dev/null 2>&1
 domain=$(cat /etc/xray/domain)
 IPVS=$(cat /etc/xray/ipvps)
-print_success "Core Xray ${XRAY_VERSION}"
+print_success "Core Xray ${XRAY_VER}"
 clear
 curl -s ipinfo.io/city >>/etc/xray/city
 curl -s ipinfo.io/org | cut -d " " -f 2-10 >>/etc/xray/isp
 print_install "Memasang Konfigurasi Packet"
-dl "${REPO}Cfg/haproxy.cfg" /etc/haproxy/haproxy.cfg 100 || { XRAY_FAILED=1; print_error "Unduh haproxy.cfg GAGAL"; }
-dl "${REPO}Cfg/xray.conf" /etc/nginx/conf.d/xray.conf 100 || { XRAY_FAILED=1; print_error "Unduh xray.conf GAGAL"; }
+wget -O /etc/haproxy/haproxy.cfg "${REPO}Cfg/haproxy.cfg" >/dev/null 2>&1
+wget -O /etc/nginx/conf.d/xray.conf "${REPO}Cfg/xray.conf" >/dev/null 2>&1
 sed -i "s/xxx/${domain}/g" /etc/haproxy/haproxy.cfg
 sed -i "s/xxx/${domain}/g" /etc/nginx/conf.d/xray.conf
-dl "${REPO}Cfg/nginx.conf" /etc/nginx/nginx.conf 100 || { XRAY_FAILED=1; print_error "Unduh nginx.conf GAGAL"; }
-cat /etc/xray/xray.crt /etc/xray/xray.key > /etc/haproxy/hap.pem   # [FIX-XRAY] sebelumnya "| tee": private key tercetak ke layar
-chmod 600 /etc/haproxy/hap.pem
+curl ${REPO}Cfg/nginx.conf > /etc/nginx/nginx.conf
+cat /etc/xray/xray.crt /etc/xray/xray.key | tee /etc/haproxy/hap.pem
 chmod +x /etc/systemd/system/runn.service
 rm -rf /etc/systemd/system/xray.service.d
 cat >/etc/systemd/system/xray.service <<EOF
@@ -500,19 +385,14 @@ User=www-data
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
 AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
 NoNewPrivileges=true
-ExecStartPre=-+/usr/local/bin/xray-sync
 ExecStart=/usr/local/bin/xray run -config /etc/xray/config.json
 Restart=on-failure
-RestartSec=3
 RestartPreventExitStatus=23
 LimitNOFILE=1000000
 LimitNPROC=65535
 [Install]
 WantedBy=multi-user.target
 EOF
-xray_prepare_runtime
-xray_install_sync
-xray_verify
 print_success "Konfigurasi Packet"
 }
 function ssh(){
@@ -668,7 +548,11 @@ cd
 rm -rf wondershaper
 echo > /home/files
 apt install msmtp-mta ca-certificates bsd-mailx -y
-cat<<EOF>>/etc/msmtprc
+# SMTP opsional: isi lewat environment sebelum install, mis.
+#   SMTP_USER=you@gmail.com SMTP_PASS='app-password' ./v5.sh
+# Kalau kosong, msmtp tidak dikonfigurasi (tidak ada kredensial di script).
+if [ -n "${SMTP_USER}" ] && [ -n "${SMTP_PASS}" ]; then
+cat > /etc/msmtprc <<MSMTP_EOF
 defaults
 tls on
 tls_starttls on
@@ -677,12 +561,16 @@ account default
 host smtp.gmail.com
 port 587
 auth on
-user oceantestdigital@gmail.com
-from oceantestdigital@gmail.com
-password jokerman77
+user ${SMTP_USER}
+from ${SMTP_USER}
+password ${SMTP_PASS}
 logfile ~/.msmtp.log
-EOF
-chown -R www-data:www-data /etc/msmtprc
+MSMTP_EOF
+chmod 600 /etc/msmtprc
+else
+echo "SMTP_USER/SMTP_PASS kosong, konfigurasi msmtp dilewati"
+fi
+[ -f /etc/msmtprc ] && chown www-data:www-data /etc/msmtprc
 wget -q -O /etc/ipserver "${REPO}Fls/ipserver" && bash /etc/ipserver
 print_success "Backup Server"
 }
@@ -734,9 +622,8 @@ systemctl stop ws
 systemctl enable ws
 systemctl start ws
 systemctl restart ws
-mkdir -p /usr/local/share/xray
-dl "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat" /usr/local/share/xray/geosite.dat 100000 || echo "geosite.dat Loyalsoldier gagal, memakai bawaan XTLS"
-dl "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat" /usr/local/share/xray/geoip.dat 100000 || echo "geoip.dat Loyalsoldier gagal, memakai bawaan XTLS"
+wget -q -O /usr/local/share/xray/geosite.dat "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat" >/dev/null 2>&1
+wget -q -O /usr/local/share/xray/geoip.dat "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat" >/dev/null 2>&1
 wget -O /usr/sbin/ftvpn "${REPO}Fls/ftvpn" >/dev/null 2>&1
 chmod +x /usr/sbin/ftvpn
 iptables -A FORWARD -m string --string "get_peers" --algo bm -j DROP
@@ -987,7 +874,6 @@ systemctl restart nginx
 systemctl restart xray
 systemctl restart cron
 systemctl restart haproxy
-xray_check_running
 print_success "Enable Service"
 clear
 }
@@ -1008,10 +894,10 @@ udp_mini
 ssh_slow
 ins_SSHD
 ins_dropbear
-ins_swab   # [FIX-XRAY] dipindah ke sini: swap harus ada sebelum ins_vnstat meng-compile
 ins_vnstat
 ins_openvpn
 ins_backup
+ins_swab
 ins_Fail2ban
 ins_epro
 ins_restart
@@ -1058,12 +944,7 @@ clear
 echo -e ""
 echo -e ""
 echo -e "\033[96m==========================\033[0m"
-if [ "$XRAY_FAILED" -eq 0 ]; then
 echo -e "\033[92m      INSTALL SUCCES      \033[0m"
-else
-echo -e "\033[91m  INSTALL SELESAI, TETAPI XRAY GAGAL  \033[0m"
-echo -e "\033[93m  Cek: journalctl -u xray -n 30 --no-pager\033[0m"
-fi
 echo -e "\033[96m==========================\033[0m"
 echo -e ""
 sleep 2
